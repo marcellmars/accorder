@@ -29,7 +29,7 @@ def path_deco(fn):
 class Passthrough(Operations):
     def __init__(self, root):
         self.root = root.encode('utf8')
-        self.d = plyvel.DB('/tmp/plydb_{}'.format(root),
+        self.d = plyvel.DB('{}/.ldb'.format(root),
                            create_if_missing=True)
 
     # Helpers
@@ -189,7 +189,7 @@ def do_md5(dn, f):
 
 
 def hashdb(root):
-    d = plyvel.DB('/tmp/plydb_{}'.format(root), create_if_missing=True)
+    d = plyvel.DB('{}/.ldb'.format(root), create_if_missing=True)
     with d.write_batch(transaction=True) as dw:
         for dn, sdl, fl in os.walk(root):
             for f in fl:
