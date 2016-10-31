@@ -18,12 +18,14 @@ from PyQt5.Qt import QVBoxLayout
 from PyQt5.Qt import QWidget
 from PyQt5.Qt import pyqtSignal
 
-import qt5reactor
-
 from autobahn.twisted.wamp import ApplicationSession
 from autobahn.twisted.wamp import ApplicationRunner
 from autobahn.wamp.types import SessionDetails
 from autobahn.wamp.types import CloseDetails
+
+from twisted.internet.defer import inlineCallbacks
+
+import qt5reactor
 
 
 class CrossClient(QObject, ApplicationSession):
@@ -34,8 +36,9 @@ class CrossClient(QObject, ApplicationSession):
         QObject.__init__(self, parent)
         ApplicationSession.__init__(self, config)
 
+    @inlineCallbacks
     def onJoin(self, details):
-        self.joinedSession.emit(details)
+        yield self.joinedSession.emit(details)
 
     def onLeave(self, details):
         self.leftSession.emit(details)
@@ -63,43 +66,84 @@ class Gooee(QDialog):
         self.vlayout = QVBoxLayout()
         self.setLayout(self.vlayout)
 
-        self.message_layout = QHBoxLayout()
-        self.message_container = QWidget()
-        self.message_container.setLayout(self.message_layout)
+        self.pub_message_layout = QHBoxLayout()
+        self.pub_message_container = QWidget()
+        self.pub_message_container.setLayout(self.pub_message_layout)
 
-        self.message_label = QLabel("Message: ")
+        self.publish_label = QLabel("Publish: ")
 
-        self.message = QLineEdit("Type your message here..")
-        self.message.setObjectName("message")
-        self.message.setSizePolicy(QSizePolicy.Expanding,
-                                   QSizePolicy.Expanding)
-        self.message.setToolTip("Type your message here")
+        self.pub_message = QLineEdit("message")
+        self.pub_message.setObjectName("message")
+        self.pub_message.setSizePolicy(QSizePolicy.Expanding,
+                                       QSizePolicy.Expanding)
+        self.pub_message.setToolTip("Type your message here")
 
-        self.send_message = QPushButton("Send")
+        self.publish_channel = QLineEdit("com.accorder.me")
+        self.send_message = QPushButton("Publish")
+
         self.send_message.clicked.connect(
-            lambda: self.session.publish(
-                u'com.accorder.python',
-                json.dumps({'res': self.message.text()})
+            lambda: self.xb_publish(
+                    {'channel': self.publish_channel.text(),
+                     'message': json.dumps({'res': self.pub_message.text()})}
             )
         )
 
-        self.message_layout.addWidget(self.message_label)
-        self.message_layout.addWidget(self.message)
-        self.message_layout.addWidget(self.send_message)
+        self.pub_message_layout.addWidget(self.publish_label)
+        self.pub_message_layout.addWidget(self.publish_channel)
+        self.pub_message_layout.addWidget(self.pub_message)
+        self.pub_message_layout.addWidget(self.send_message)
+
+        self.sub_message_layout = QHBoxLayout()
+        self.sub_message_container = QWidget()
+        self.sub_message_container.setLayout(self.sub_message_layout)
+
+        self.subscribe_label = QLabel("Subscribe: ")
+
+        self.sub_callback = QLineEdit("callback")
+        self.sub_callback.setObjectName("callback")
+        self.sub_callback.setSizePolicy(QSizePolicy.Expanding,
+                                        QSizePolicy.Expanding)
+
+        self.subscribe_channel = QLineEdit("com.accorder.me")
+        self.subscribe = QPushButton("Subscribe")
+
+        self.subscribe.clicked.connect(
+            lambda: self.xb_subscribe(
+                    {'channel': self.subscribe_channel.text(),
+                     'callback': self.sub_callback.text()}
+            )
+        )
+
+        self.sub_message_layout.addWidget(self.subscribe_label)
+        self.sub_message_layout.addWidget(self.subscribe_channel)
+        self.sub_message_layout.addWidget(self.sub_callback)
+        self.sub_message_layout.addWidget(self.subscribe)
 
         self.py_recv = QLabel("From py: ")
         self.js_recv = QLabel("From js: ")
 
-        self.vlayout.addWidget(self.message_container)
+        self.vlayout.addWidget(self.pub_message_container)
+        self.vlayout.addWidget(self.sub_message_container)
         self.vlayout.addWidget(self.py_recv)
         self.vlayout.addWidget(self.js_recv)
 
+    @inlineCallbacks
+    def xb_publish(self, c_m):
+        print("publish: {}".format(c_m))
+        yield self.session.publish(c_m['channel'],
+                                   c_m['message'])
+
+    @inlineCallbacks
+    def xb_subscribe(self, c_m):
+        print("subscribe: {}".format(c_m))
+        ### eval only for testing!!!
+        yield self.session.subscribe(eval(c_m['callback']),
+                                     c_m['channel'])
+        for s in self.session._subscriptions:
+            print("subscriptions: {}".format(s))
+
     def on_join_session(self):
-        self.session.subscribe(self.on_python_message,
-                               u'com.accorder.python')
-        self.session.subscribe(self.on_js_message,
-                               u'com.accorder.js')
-        print("Connected to realm {} at {}".format(self.realm, self.url))
+        print("Session joined: {}".format(self.session.__dict__))
 
     def on_leave_session(self):
         print('leave')
@@ -111,6 +155,8 @@ class Gooee(QDialog):
     def on_js_message(self, message):
         self.js_recv.setText("From js: {}".format(message))
         print("on_js: {}".format(message))
+        for s in self.session._subscriptions:
+            print("subscriptions (via js): {}".print(s))
 
 
 if __name__ == '__main__':
@@ -122,6 +168,7 @@ if __name__ == '__main__':
         from twisted.internet import reactor
 
         def quit_app():
+            reactor.addSystemEventTrigger('before', 'shutdown', callable)
             if reactor.threadpool is not None:
                 reactor.threadpool.stop()
             app.quit()
