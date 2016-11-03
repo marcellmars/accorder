@@ -7,7 +7,6 @@ import sys
 import json
 import signal
 import pprint
-pp = pprint.pprint
 
 from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
@@ -19,6 +18,8 @@ from PyQt5.Qt import QHBoxLayout
 from PyQt5.Qt import QSizePolicy
 from PyQt5.Qt import QVBoxLayout
 from PyQt5.Qt import QWidget
+from PyQt5.Qt import QStateMachine
+from PyQt5.Qt import QState
 from PyQt5.Qt import pyqtSignal
 
 from autobahn.twisted.wamp import ApplicationSession
@@ -29,6 +30,8 @@ from autobahn.wamp.types import CloseDetails
 from twisted.internet.defer import inlineCallbacks
 
 import qt5reactor
+
+pp = pprint.pprint
 
 
 class CrossClient(QObject, ApplicationSession):
@@ -48,6 +51,9 @@ class CrossClient(QObject, ApplicationSession):
 
 
 class Gooee(QDialog):
+    check_passed = pyqtSignal()
+    decrypted = pyqtSignal()
+
     def __init__(self, url, realm, parent=None):
         QDialog.__init__(self)
 
@@ -123,11 +129,40 @@ class Gooee(QDialog):
 
         self.py_recv = QLabel("From py: ")
         self.js_recv = QLabel("From js: ")
+        self.watch_state_machine = QLabel("State (machine): ")
 
         self.vlayout.addWidget(self.pub_message_container)
         self.vlayout.addWidget(self.sub_message_container)
         self.vlayout.addWidget(self.py_recv)
         self.vlayout.addWidget(self.js_recv)
+        self.vlayout.addWidget(self.watch_state_machine)
+
+        # state machine
+        self.current_state = "not initialized"
+        self.machine = QStateMachine()
+
+        self.initial_check = QState()
+        self.initial_check.setObjectName("initial_check")
+        self.initial_check.entered.connect(lambda: self.update_current_state("initial_check"))
+
+        self.decrypt = QState()
+        self.decrypt.setObjectName("decrypt")
+        self.decrypt.entered.connect(lambda: self.update_current_state("decrypt"))
+
+        self.chat = QState()
+        self.chat.setObjectName("chat")
+        self.chat.entered.connect(lambda: self.update_current_state("chat"))
+
+        self.initial_check.addTransition(self.check_passed, self.decrypt)
+        self.initial_check.addTransition(self.decrypted, self.chat)
+        self.chat.addTransition(self.initial_check)
+
+        self.machine.addState(self.initial_check)
+        self.machine.addState(self.decrypt)
+        self.machine.addState(self.chat)
+
+        self.machine.setInitialState(self.initial_check)
+        self.machine.start()
 
     @inlineCallbacks
     def xb_publish(self, c_m):
@@ -138,7 +173,7 @@ class Gooee(QDialog):
     @inlineCallbacks
     def xb_subscribe(self, c_m):
         print("subscribe: {}".format(c_m))
-        ### eval only for testing!!!
+        # eval only for testing!!!
         yield self.session.subscribe(eval(c_m['callback']),
                                      c_m['channel'])
         for s in self.session._subscriptions:
@@ -158,18 +193,19 @@ class Gooee(QDialog):
             print("subscriptions (via python): {}".print(s))
 
     def on_js_message(self, message):
-        self.js_recv.setText("From js: {}".format(message))
-        pprint.pprint("session.id: {}".format(dict(self.session._subscriptions)))
-        session_dict = dict(self.session._subscriptions)
-        pp(session_dict)
-        for sub_id,i in session_dict.items():
-            pp(sub_id)
-            pp(i[0].topic)
-            # pp('sub_id: {}\ntopic: {}'.format(sub_id, i['topic']))
-
+        print("type(m): {}".format(type(message)))
+        if self.current_state == "initial_check":
+            self.check_passed.emit()
+        # pprint(self.machine)
         print("on_js: {}".format(message))
+        self.js_recv.setText("From js: {}".format(message))
 
-    def closeEvent(self,ev):
+    def update_current_state(self, message):
+        self.current_state = message
+        self.watch_state_machine.setText("Current (machine) state: {}".format(self.current_state))
+        print("update_current_state: {}".format(message))
+
+    def closeEvent(self, ev):
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
         else:
