@@ -5,8 +5,11 @@ from __future__ import (unicode_literals, division, absolute_import,
 
 import sys
 import json
+import uuid
 import signal
 import pprint
+
+import pyaes
 
 from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
@@ -32,6 +35,8 @@ from twisted.internet.defer import inlineCallbacks
 import qt5reactor
 
 pp = pprint.pprint
+SECRET = uuid.UUID('208b8499-057b-4317-8e50-99b62343fa94')
+print("Secret: {}".format(SECRET))
 
 
 class CrossClient(QObject, ApplicationSession):
@@ -92,7 +97,10 @@ class Gooee(QDialog):
         self.send_message.clicked.connect(
             lambda: self.xb_publish(
                     {'channel': self.publish_channel.text(),
-                     'message': json.dumps({'res': self.pub_message.text()})}
+                     'message': self.encrypt_message(
+                         json.dumps({'res': self.pub_message.text()})
+                     )
+                    }
             )
         )
 
@@ -185,6 +193,12 @@ class Gooee(QDialog):
     def on_leave_session(self):
         print('leave')
 
+    def encrypt_message(self, msg, key=SECRET):
+        return pyaes.AESModeOfOperationCTR(key.bytes).encrypt(msg)
+
+    def decrypt_message(self, msg, key=SECRET):
+        return pyaes.AESModeOfOperationCTR(key.bytes).decrypt(msg)
+
     def on_python_message(self, message):
         print("session.id: {}".format(self.session))
         self.py_recv.setText("From py: {}".format(message))
@@ -193,12 +207,14 @@ class Gooee(QDialog):
             print("subscriptions (via python): {}".print(s))
 
     def on_js_message(self, message):
-        print("type(m): {}".format(type(message)))
         if self.current_state == "initial_check":
             self.check_passed.emit()
-        # pprint(self.machine)
-        print("on_js: {}".format(message))
-        self.js_recv.setText("From js: {}".format(message))
+        print("on_js_encrypted: {}".format(message))
+        message = self.decrypt_message(message)
+        print("on_js_decrypted: {}".format(message))
+        j = (json.loads(message.decode('utf-8')))
+
+        self.js_recv.setText("Received message: {}".format(j['res']))
 
     def update_current_state(self, message):
         self.current_state = message
