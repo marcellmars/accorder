@@ -1,20 +1,20 @@
-from autobahn.asyncio.wamp import ApplicationSession, ApplicationRunner
+from autobahn.wamp.types import SubscribeOptions
+from autobahn.asyncio.wamp import ApplicationRunner
+from autobahn.asyncio.wamp import ApplicationSession
 import json
 
 
 class Client(ApplicationSession):
     async def onJoin(self, details):
-        def on_event(j):
-            r = json.loads(j)
-            print("JSON 'res' value: {}".format(r['res']))
-            self.publish(u"com.accorder.python", json.dumps({'res': 'ack!'}))
+        def on_event(j, details):
+            print("published: {}, {}".format(j, details))
 
         print("session joined...")
 
         passport = {'res': 'init', 'id': 'myself'}
         try:
             self.publish(u"com.accorder.python", json.dumps(passport))
-            await self.subscribe(on_event, u"com.accorder.js")
+            await self.subscribe(on_event, u"com..", options=SubscribeOptions(match=u"wildcard", details_arg=u"details"))
         except Exception as reason:
             print("didn't subscribe because of: {}".format(reason))
 
