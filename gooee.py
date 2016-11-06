@@ -12,6 +12,7 @@ import pprint
 import pyaes
 
 import cherrypy
+from cherrypy.lib import auth_digest
 
 from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
@@ -33,6 +34,9 @@ from autobahn.wamp.types import SessionDetails
 from autobahn.wamp.types import CloseDetails
 
 from twisted.internet.defer import inlineCallbacks
+from twisted.internet import task
+from twisted.web.wsgi import WSGIResource
+from twisted.web import server
 
 import qt5reactor
 
@@ -101,8 +105,7 @@ class Gooee(QDialog):
                     {'channel': self.publish_channel.text(),
                      'message': self.encrypt_message(
                          json.dumps({'res': self.pub_message.text()})
-                     )
-                    }
+                     )}
             )
         )
 
@@ -236,6 +239,14 @@ class Root(object):
     def index(self):
         return "Hello world"
 
+
+# def validate_password(realm, username, password):
+#     if username in USERS and USERS[username] == password:
+#         return True
+#     else:
+#         return False
+
+
 if __name__ == '__main__':
     if len(sys.argv) == 1:
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -248,11 +259,16 @@ if __name__ == '__main__':
         from twisted.internet import reactor
 
         # adding cherrypy into reactor loop
-        from twisted.internet import task
-        from twisted.web.wsgi import WSGIResource
-        from twisted.web import server
+        USERS = {'jon': 'secret'}
+        CONF = {'/': {'tools.auth_digest.on': True,
+                      'tools.auth_digest.realm': 'localhost',
+                      'tools.auth_digest.get_ha1': auth_digest.get_ha1_dict_plain(USERS),
+                      'tools.auth_digest.key': 'b665c27146791cfb'}}
+                # '/basic': {'tools.auth_basic.on': True,
+                #            'tools.auth_basic.realm': 'localhost ',
+                #            'tools.auth_basic.checkpassword': validate_password}}
 
-        wsgiapp = cherrypy.tree.mount(Root())
+        wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
         task.LoopingCall(lambda: cherrypy.engine.publish('main')).start(0.1)
