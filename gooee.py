@@ -11,6 +11,8 @@ import pprint
 
 import pyaes
 
+import cherrypy
+
 from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
 from PyQt5.Qt import QDialog
@@ -229,6 +231,11 @@ class Gooee(QDialog):
         app.quit()
 
 
+class Root(object):
+    @cherrypy.expose
+    def index(self):
+        return "Hello world"
+
 if __name__ == '__main__':
     if len(sys.argv) == 1:
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -237,9 +244,29 @@ if __name__ == '__main__':
         app.setApplicationName("gooee")
 
         qt5reactor.install()
+
         from twisted.internet import reactor
 
+        # adding cherrypy into reactor loop
+        from twisted.internet import task
+        from twisted.web.wsgi import WSGIResource
+        from twisted.web import server
+
+        wsgiapp = cherrypy.tree.mount(Root())
+        cherrypy.config.update({'engine.autoreload.on': False})
+        cherrypy.server.unsubscribe()
+        task.LoopingCall(lambda: cherrypy.engine.publish('main')).start(0.1)
+        reactor.addSystemEventTrigger('after', 'startup',
+                                      cherrypy.engine.start)
+        reactor.addSystemEventTrigger('before', 'shutdown',
+                                      cherrypy.engine.exit)
+        resource = WSGIResource(reactor, reactor.getThreadPool(), wsgiapp)
+        site = server.Site(resource)
+        reactor.listenTCP(9989, site)
+
+        # pyqt gui stuff
         main = Gooee(url=u"ws://127.0.0.1:8080/ws", realm="realm1")
         main.show()
 
+        # run twisted reactor
         reactor.run()
