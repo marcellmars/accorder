@@ -3,11 +3,11 @@
 from __future__ import (unicode_literals, division, absolute_import,
                         print_function)
 
+import os
 import sys
 import json
 import uuid
 import signal
-import pprint
 
 import pyaes
 
@@ -35,14 +35,25 @@ from autobahn.wamp.types import CloseDetails
 
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet import task
+from twisted.internet.protocol import ProcessProtocol
 from twisted.web.wsgi import WSGIResource
 from twisted.web import server
 
 import qt5reactor
 
-pp = pprint.pprint
-SECRET = uuid.UUID('208b8499-057b-4317-8e50-99b62343fa94')
-print("Secret: {}".format(SECRET))
+
+class SSHClient(ProcessProtocol):
+    def outReceived(self, data):
+        print("SSH outReceived: {}".format(data))
+
+    def errReceived(self, data):
+        print("SSH errReceived: {}".format(data))
+
+    def connectionMade(self):
+        print("SSH started...")
+
+    def processEnded(self, reason):
+        print("SSH ended: {}".format(reason))
 
 
 class CrossClient(QObject, ApplicationSession):
@@ -65,11 +76,13 @@ class Gooee(QDialog):
     check_passed = pyqtSignal()
     decrypted = pyqtSignal()
 
-    def __init__(self, url, realm, parent=None):
+    def __init__(self, url, realm, acconf, parent=None):
         QDialog.__init__(self)
 
         self.url = url
         self.realm = realm
+        self.acconf = acconf
+        self.shared_secret = uuid.UUID(self.acconf['shared_secret'])
         self.session = None
         self.subscriptions = {}
 
@@ -156,11 +169,13 @@ class Gooee(QDialog):
 
         self.initial_check = QState()
         self.initial_check.setObjectName("initial_check")
-        self.initial_check.entered.connect(lambda: self.update_current_state("initial_check"))
+        self.initial_check.entered.connect(
+            lambda: self.update_current_state("initial_check"))
 
         self.decrypt = QState()
         self.decrypt.setObjectName("decrypt")
-        self.decrypt.entered.connect(lambda: self.update_current_state("decrypt"))
+        self.decrypt.entered.connect(
+            lambda: self.update_current_state("decrypt"))
 
         self.chat = QState()
         self.chat.setObjectName("chat")
@@ -180,29 +195,29 @@ class Gooee(QDialog):
     @inlineCallbacks
     def xb_publish(self, c_m):
         print("publish: {}".format(c_m))
-        yield self.session.publish(c_m['channel'],
-                                   c_m['message'])
+        yield self.session.publish(c_m['channel'], c_m['message'])
 
     @inlineCallbacks
     def xb_subscribe(self, c_m):
         print("subscribe: {}".format(c_m))
         # eval only for testing!!!
-        yield self.session.subscribe(eval(c_m['callback']),
-                                     c_m['channel'])
+        yield self.session.subscribe(eval(c_m['callback']), c_m['channel'])
         for s in self.session._subscriptions:
             print("subscriptions: {}".format(s))
 
     def on_join_session(self):
-        pprint.pprint("session.id: {}".format(self.session._subscriptions))
+        print("session.id: {}".format(self.session._subscriptions))
 
     def on_leave_session(self):
         print('leave')
 
-    def encrypt_message(self, msg, key=SECRET):
-        return pyaes.AESModeOfOperationCTR(key.bytes).encrypt(msg)
+    def encrypt_message(self, msg):
+        return pyaes.AESModeOfOperationCTR(self.shared_secret.bytes).encrypt(
+            msg)
 
-    def decrypt_message(self, msg, key=SECRET):
-        return pyaes.AESModeOfOperationCTR(key.bytes).decrypt(msg)
+    def decrypt_message(self, msg):
+        return pyaes.AESModeOfOperationCTR(self.shared_secret.bytes).decrypt(
+            msg)
 
     def on_python_message(self, message):
         print("session.id: {}".format(self.session))
@@ -223,7 +238,8 @@ class Gooee(QDialog):
 
     def update_current_state(self, message):
         self.current_state = message
-        self.watch_state_machine.setText("Current (machine) state: {}".format(self.current_state))
+        self.watch_state_machine.setText("Current (machine) state: {}".format(
+            self.current_state))
         print("update_current_state: {}".format(message))
 
     def closeEvent(self, ev):
@@ -239,16 +255,19 @@ class Root(object):
     def index(self):
         return "Hello world"
 
-
 # def validate_password(realm, username, password):
 #     if username in USERS and USERS[username] == password:
 #         return True
 #     else:
 #         return False
 
-
 if __name__ == '__main__':
-    if len(sys.argv) == 1:
+    if len(sys.argv) >= 1:
+        if len(sys.argv) == 2:
+            ACCONF = json.load(open(sys.argv[2]))
+        else:
+            ACCONF = json.load(open("accorder.json"))
+
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
         app = QApplication(sys.argv)
@@ -259,14 +278,19 @@ if __name__ == '__main__':
         from twisted.internet import reactor
 
         # adding cherrypy into reactor loop
-        USERS = {'jon': 'secret'}
-        CONF = {'/': {'tools.auth_digest.on': True,
-                      'tools.auth_digest.realm': 'localhost',
-                      'tools.auth_digest.get_ha1': auth_digest.get_ha1_dict_plain(USERS),
-                      'tools.auth_digest.key': 'b665c27146791cfb'}}
-                # '/basic': {'tools.auth_basic.on': True,
-                #            'tools.auth_basic.realm': 'localhost ',
-                #            'tools.auth_basic.checkpassword': validate_password}}
+        CONF = {'/':
+                {'tools.auth_digest.on': True,
+                 'tools.auth_digest.realm': 'localhost',
+                 'tools.auth_digest.get_ha1':
+                 auth_digest.get_ha1_dict_plain(ACCONF['http_shared_users']),
+                 'tools.auth_digest.key': uuid.uuid4().hex,
+                 'tools.staticdir.on': True,
+                 'tools.staticdir.dir': ACCONF['http_shared_dir'],
+                 'tools.staticdir.index': ACCONF['http_shared_index']}}
+
+        # '/basic': {'tools.auth_basic.on': True,
+        #            'tools.auth_basic.realm': 'localhost ',
+        #            'tools.auth_basic.checkpassword': validate_password}}
 
         wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
         cherrypy.config.update({'engine.autoreload.on': False})
@@ -278,11 +302,23 @@ if __name__ == '__main__':
                                       cherrypy.engine.exit)
         resource = WSGIResource(reactor, reactor.getThreadPool(), wsgiapp)
         site = server.Site(resource)
-        reactor.listenTCP(9989, site)
+        reactor.listenTCP(ACCONF['cherrypy_port'], site)
 
         # pyqt gui stuff
-        main = Gooee(url=u"ws://127.0.0.1:8080/ws", realm="realm1")
+        main = Gooee(
+            url=u"ws://127.0.0.1:8080/ws", realm="realm1", acconf=ACCONF)
         main.show()
+
+        ssh_options = ['-T', '-N', '-g', '-C',
+                       '-c', 'arcfour,aes128-cbc,blowfish-cbc',
+                       '-o', 'TCPKeepAlive=yes',
+                       '-o', 'UserKnownHostsFile=/dev/null',
+                       '-o', 'StrictHostKeyChecking=no',
+                       '-o', 'ServerAliveINterval=60',
+                       '-o', 'ExitOnForwardFailure=yes',
+                       '-v', 'memoryoftheworld.org', '-l', 'tunnel', '-R',
+                       '{}:localhost:{}'.format(6688, 9989), '-p', '722']
+        reactor.spawnProcess(SSHClient(), 'ssh', ssh_options, env=os.environ)
 
         # run twisted reactor
         reactor.run()
