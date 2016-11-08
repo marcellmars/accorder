@@ -42,19 +42,26 @@ from twisted.web import server
 import qt5reactor
 
 
-class SSHClient(ProcessProtocol):
-    def outReceived(self, data):
-        print("SSH outReceived: {}".format(data))
+class SSHTunnel(QObject, ProcessProtocol):
+    ssh_log = pyqtSignal(str, name="ssh_log")
 
-    def errReceived(self, data):
-        print("SSH errReceived: {}".format(data))
+    def __init__(self):
+        QObject.__init__(self)
+
+    def childDataReceived(self, cfd, data):
+        print(u"{}".format(data.decode()))
+        self.ssh_log.emit(u"{}".format(data.decode()[:30]))
 
     def connectionMade(self):
-        print("SSH started...")
+        print(u"Tunnel established...")
+        self.ssh_log.emit(u"Tunnel established...")
 
     def processEnded(self, reason):
-        print("SSH ended: {}".format(reason))
+        self.ssh_log.emit(u"Tunnel is dead!")
+        print(u"SSH ended: {}".format(reason))
 
+    def kill_tunnel(self):
+        self.transport.signalProcess('KILL')
 
 class CrossClient(QObject, ApplicationSession):
     joinedSession = pyqtSignal(SessionDetails)
@@ -95,6 +102,9 @@ class Gooee(QDialog):
         runner = ApplicationRunner(self.url, self.realm)
         runner.run(make, start_reactor=False)
 
+        self.ssh_tunnel = SSHTunnel()
+        self.ssh_tunnel.ssh_log.connect(self.log_message)
+
         self.vlayout = QVBoxLayout()
         self.setLayout(self.vlayout)
 
@@ -121,6 +131,8 @@ class Gooee(QDialog):
                      )}
             )
         )
+
+        self.send_message.clicked.connect(self.ssh_tunnel.kill_tunnel)
 
         self.pub_message_layout.addWidget(self.publish_label)
         self.pub_message_layout.addWidget(self.publish_channel)
@@ -156,12 +168,14 @@ class Gooee(QDialog):
         self.py_recv = QLabel("From py: ")
         self.js_recv = QLabel("From js: ")
         self.watch_state_machine = QLabel("State (machine): ")
+        self.watch_ssh_tunnel = QLabel("SSH Tunnel: ")
 
         self.vlayout.addWidget(self.pub_message_container)
         self.vlayout.addWidget(self.sub_message_container)
         self.vlayout.addWidget(self.py_recv)
         self.vlayout.addWidget(self.js_recv)
         self.vlayout.addWidget(self.watch_state_machine)
+        self.vlayout.addWidget(self.watch_ssh_tunnel)
 
         # state machine
         self.current_state = "not initialized"
@@ -176,6 +190,10 @@ class Gooee(QDialog):
         self.decrypt.setObjectName("decrypt")
         self.decrypt.entered.connect(
             lambda: self.update_current_state("decrypt"))
+        # self.decrypt.entered.connect(
+        #     lambda: self.ssh_tunnel.emit_ssh_log(u"change of state in state machine"))
+        self.decrypt.entered.connect(
+            lambda: self.tunnel(self.acconf['ssh_server'], self.acconf['ssh_port'], self.acconf['ssh_remote_port'], self.acconf['cherrypy_port']))
 
         self.chat = QState()
         self.chat.setObjectName("chat")
@@ -191,6 +209,8 @@ class Gooee(QDialog):
 
         self.machine.setInitialState(self.initial_check)
         self.machine.start()
+
+        # self.ssh_tunnel.emit_ssh_log(u"FooBar!!")
 
     @inlineCallbacks
     def xb_publish(self, c_m):
@@ -219,6 +239,10 @@ class Gooee(QDialog):
         return pyaes.AESModeOfOperationCTR(self.shared_secret.bytes).decrypt(
             msg)
 
+    def log_message(self, msg):
+        print("LOG MESSAGE: {}".format(msg))
+        self.watch_ssh_tunnel.setText("Log message: {}".format(msg))
+
     def on_python_message(self, message):
         print("session.id: {}".format(self.session))
         self.py_recv.setText("From py: {}".format(message))
@@ -242,7 +266,21 @@ class Gooee(QDialog):
             self.current_state))
         print("update_current_state: {}".format(message))
 
+    def tunnel(self, ssh_server, ssh_port, rport, lport):
+        ssh_options = ['-T', '-N', '-g', '-C',
+                       '-c', 'arcfour,aes128-cbc,blowfish-cbc',
+                       '-o', 'TCPKeepAlive=yes',
+                       '-o', 'UserKnownHostsFile=/dev/null',
+                       '-o', 'StrictHostKeyChecking=no',
+                       '-o', 'ServerAliveINterval=60',
+                       '-o', 'ExitOnForwardFailure=yes',
+                       '-v',
+                       ssh_server, '-l', 'tunnel', '-R',
+                       '{}:localhost:{}'.format(rport, lport), '-p', ssh_port]
+        reactor.spawnProcess(self.ssh_tunnel, 'ssh', ssh_options, env=os.environ)
+
     def closeEvent(self, ev):
+        self.ssh_tunnel.kill_tunnel()
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
         else:
@@ -308,17 +346,6 @@ if __name__ == '__main__':
         main = Gooee(
             url=u"ws://127.0.0.1:8080/ws", realm="realm1", acconf=ACCONF)
         main.show()
-
-        ssh_options = ['-T', '-N', '-g', '-C',
-                       '-c', 'arcfour,aes128-cbc,blowfish-cbc',
-                       '-o', 'TCPKeepAlive=yes',
-                       '-o', 'UserKnownHostsFile=/dev/null',
-                       '-o', 'StrictHostKeyChecking=no',
-                       '-o', 'ServerAliveINterval=60',
-                       '-o', 'ExitOnForwardFailure=yes',
-                       '-v', 'memoryoftheworld.org', '-l', 'tunnel', '-R',
-                       '{}:localhost:{}'.format(6688, 9989), '-p', '722']
-        reactor.spawnProcess(SSHClient(), 'ssh', ssh_options, env=os.environ)
 
         # run twisted reactor
         reactor.run()
