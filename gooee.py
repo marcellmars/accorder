@@ -13,6 +13,7 @@ import pyaes
 
 import cherrypy
 from cherrypy.lib import auth_digest
+from cherrypy.lib.static import serve_file
 
 from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
@@ -288,16 +289,20 @@ class Gooee(QDialog):
         app.quit()
 
 
+def shared_secret(*args, **kwargs):
+    if cherrypy.request.params.get(ACCONF['shared_secret']):
+        cherrypy.session[ACCONF['shared_secret']] = True
+        raise cherrypy.HTTPRedirect("/")
+
+    if not cherrypy.session.get(ACCONF['shared_secret']):
+        raise cherrypy.HTTPError("403 Forbidden")
+
+
 class Root(object):
     @cherrypy.expose
     def index(self):
-        return "Hello world"
+        return
 
-# def validate_password(realm, username, password):
-#     if username in USERS and USERS[username] == password:
-#         return True
-#     else:
-#         return False
 
 if __name__ == '__main__':
     if len(sys.argv) >= 1:
@@ -316,21 +321,14 @@ if __name__ == '__main__':
         from twisted.internet import reactor
 
         # adding cherrypy into reactor loop
-        CONF = {'/':
-                {'tools.auth_digest.on': True,
-                 'tools.auth_digest.realm': 'localhost',
-                 'tools.auth_digest.get_ha1':
-                 auth_digest.get_ha1_dict_plain(ACCONF['http_shared_users']),
-                 'tools.auth_digest.key': uuid.uuid4().hex,
-                 'tools.staticdir.on': True,
-                 'tools.staticdir.dir': ACCONF['http_shared_dir'],
-                 'tools.staticdir.index': ACCONF['http_shared_index']}}
-
-        # '/basic': {'tools.auth_basic.on': True,
-        #            'tools.auth_basic.realm': 'localhost ',
-        #            'tools.auth_basic.checkpassword': validate_password}}
+        CONF = {'/': {'tools.zkauth.on': True,
+                      'tools.sessions.on': True,
+                      'tools.staticdir.on': True,
+                      'tools.staticdir.dir': ACCONF['http_shared_dir'],
+                      'tools.staticdir.index': ACCONF['http_shared_index']}}
 
         wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
+        cherrypy.tools.zkauth = cherrypy.Tool('before_handler', shared_secret)
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
         task.LoopingCall(lambda: cherrypy.engine.publish('main')).start(0.1)
