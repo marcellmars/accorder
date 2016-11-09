@@ -12,8 +12,6 @@ import signal
 import pyaes
 
 import cherrypy
-from cherrypy.lib import auth_digest
-from cherrypy.lib.static import serve_file
 
 from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
@@ -321,14 +319,14 @@ if __name__ == '__main__':
         from twisted.internet import reactor
 
         # adding cherrypy into reactor loop
-        CONF = {'/': {'tools.zkauth.on': True,
+        CONF = {'/': {'tools.session_auth.on': True,
                       'tools.sessions.on': True,
                       'tools.staticdir.on': True,
                       'tools.staticdir.dir': ACCONF['http_shared_dir'],
                       'tools.staticdir.index': ACCONF['http_shared_index']}}
 
         wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
-        cherrypy.tools.zkauth = cherrypy.Tool('before_handler', shared_secret)
+        cherrypy.tools.session_auth = cherrypy.Tool('before_handler', shared_secret)
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
         task.LoopingCall(lambda: cherrypy.engine.publish('main')).start(0.1)
