@@ -1,7 +1,25 @@
-{"cherrypy_port": 9989,
- "shared_secret": "208b8499-057b-4317-8e50-99b62343fa94",
- "ssh_server": "memoryoftheworld.org",
- "ssh_port": "722",
- "ssh_remote_port": "5688",
- "http_shared_dir": "/home/m/CalibreLibraries/FooBar",
- "http_shared_index": "BROWSE_LIBRARY.html"}
+{
+    "local_key": "208b8499-057b-4317-8e50-99b62343fa",
+    "sessions": {
+        "311b550b-03c4-4fae-961d-e22337c64476": {
+            "cherrypy_port": 9989,
+            "http_shared_dir": "/home/m/CalibreLibraries/FooBar",
+            "http_shared_index": "BROWSE_LIBRARY.html",
+            "name": "some name",
+            "shared_secret": "208b8499-057b-4317-8e50-99b62343fa94",
+            "ssh_port": "722",
+            "ssh_remote_port": "5688",
+            "ssh_server": "memoryoftheworld.org"
+        },
+        "6c17388a-c3ea-4379-859d-6230ce8f4202": {
+            "cherrypy_port": 9989,
+            "http_shared_dir": "/home/m/CalibreLibraries/FooBar",
+            "http_shared_index": "BROWSE_LIBRARY.html",
+            "name": "another name",
+            "shared_secret": "55191b77-659d-483b-b8b6-df7e5267443d",
+            "ssh_port": "722",
+            "ssh_remote_port": "5688",
+            "ssh_server": "memoryoftheworld.org"
+        }
+    }
+}

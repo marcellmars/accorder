@@ -8,14 +8,18 @@ import sys
 import json
 import uuid
 import signal
+import random
 
 import pyaes
 
 import cherrypy
 
+from PyQt5.Qt import Qt
 from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
 from PyQt5.Qt import QDialog
+from PyQt5.Qt import QMainWindow
+from PyQt5.Qt import QSplitter
 from PyQt5.Qt import QLineEdit
 from PyQt5.Qt import QLabel
 from PyQt5.Qt import QPushButton
@@ -34,15 +38,81 @@ from autobahn.wamp.types import CloseDetails
 
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet import task
+from twisted.internet import error
 from twisted.internet.protocol import ProcessProtocol
 from twisted.web.wsgi import WSGIResource
 from twisted.web import server
 
 import qt5reactor
 
+from IPython.qt.console.rich_ipython_widget import RichJupyterWidget
+from IPython.qt.inprocess import QtInProcessKernelManager
+# from IPython.lib import guisupport
+
+
+class Js2Py(QObject):
+    sent = pyqtSignal(str)
+
+    def sendToPython(self, s):
+        self.sent.emit(s)
+
+
+class Snipdom(QMainWindow):
+    def __init__(self, gooee):
+        QMainWindow.__init__(self)
+        self.gooee = gooee
+
+        self.hsplit = QSplitter()
+        self.setCentralWidget(self.hsplit)
+
+        self.kernel_manager = QtInProcessKernelManager()
+        self.kernel_manager.start_kernel()
+        self.kernel = self.kernel_manager.kernel
+        self.kernel.gui = 'qt'
+
+        self.control = RichJupyterWidget(gui_completion="droplist")
+
+        self.kernel.shell.push({'snipdom': self})
+        self.kernel.shell.push({'gooee': self.gooee})
+
+        kernel_client = self.kernel_manager.client()
+        kernel_client.start_channels()
+
+        self.control.kernel_manager = self.kernel_manager
+        self.control.kernel_client = kernel_client
+
+        self.vsplit = QSplitter()
+        self.vsplit.setOrientation(Qt.Vertical)
+
+        self.vsplit.addWidget(self.control)
+        self.hsplit.addWidget(self.vsplit)
+
+        self.sendButton = QPushButton("send")
+        # self.sendButton.clicked.connect(self.sendcode)
+        self.vsplit.addWidget(self.sendButton)
+
+        self.bridge = Js2Py()
+        self.bridge.sent.connect(self.codeFromJs)
+
+        # lab = QtGui.QLabel(kernel.shell.history_manager.get_range(start=-1).next()[2])
+
+    def codeFromJs(self, code):
+        self.control.input_buffer = code
+
+    def closeEvent(self, ev):
+        self.gooee.ssh_tunnel.kill_tunnel()
+        if reactor.threadpool is not None:
+            reactor.threadpool.stop()
+        else:
+            reactor.stop
+        self.kernel_manager.shutdown_kernel()
+        self.kernel_manager.client().stop_channels()
+        app.quit()
+
 
 class SSHTunnel(QObject, ProcessProtocol):
     ssh_log = pyqtSignal(str, name="ssh_log")
+    ssh_ended = pyqtSignal()
 
     def __init__(self):
         QObject.__init__(self)
@@ -57,10 +127,15 @@ class SSHTunnel(QObject, ProcessProtocol):
 
     def processEnded(self, reason):
         self.ssh_log.emit(u"Tunnel is dead!")
+        self.ssh_ended.emit()
         print(u"SSH ended: {}".format(reason))
 
     def kill_tunnel(self):
-        self.transport.signalProcess('KILL')
+        try:
+            self.transport.signalProcess('KILL')
+        except error.ProcessExitedAlready:
+            self.ssh_log.emit(u"Tunnel already dead...")
+
 
 class CrossClient(QObject, ApplicationSession):
     joinedSession = pyqtSignal(SessionDetails)
@@ -87,7 +162,8 @@ class Gooee(QDialog):
 
         self.url = url
         self.realm = realm
-        self.acconf = acconf
+        self.acconf = [ts for ts in acconf['sessions'].values()][0]
+        # self.temp_session = [ts for ts in self.acconf['sessions'].values()][0]
         self.shared_secret = uuid.UUID(self.acconf['shared_secret'])
         self.session = None
         self.subscriptions = {}
@@ -189,17 +265,26 @@ class Gooee(QDialog):
         self.decrypt.setObjectName("decrypt")
         self.decrypt.entered.connect(
             lambda: self.update_current_state("decrypt"))
+
         # self.decrypt.entered.connect(
         #     lambda: self.ssh_tunnel.emit_ssh_log(u"change of state in state machine"))
+
+        self.ssh_port = str(int(random.random()*48000+1024))
+        print("ssh_port: {}".format(self.ssh_port))
         self.decrypt.entered.connect(
-            lambda: self.tunnel(self.acconf['ssh_server'], self.acconf['ssh_port'], self.acconf['ssh_remote_port'], self.acconf['cherrypy_port']))
+            lambda: self.tunnel(self.acconf['ssh_server'],
+                                self.acconf['ssh_port'],
+                                self.ssh_port,
+                                self.acconf['cherrypy_port']))
+
+        # self.decrypt.entered.connect(self.local_cherrypy)
 
         self.chat = QState()
         self.chat.setObjectName("chat")
         self.chat.entered.connect(lambda: self.update_current_state("chat"))
 
         self.initial_check.addTransition(self.check_passed, self.decrypt)
-        self.initial_check.addTransition(self.decrypted, self.chat)
+        self.decrypt.addTransition(self.ssh_tunnel.ssh_ended, self.chat)
         self.chat.addTransition(self.initial_check)
 
         self.machine.addState(self.initial_check)
@@ -278,21 +363,39 @@ class Gooee(QDialog):
                        '{}:localhost:{}'.format(rport, lport), '-p', ssh_port]
         reactor.spawnProcess(self.ssh_tunnel, 'ssh', ssh_options, env=os.environ)
 
-    def closeEvent(self, ev):
-        self.ssh_tunnel.kill_tunnel()
-        if reactor.threadpool is not None:
-            reactor.threadpool.stop()
-        else:
-            reactor.stop
-        app.quit()
+    def get_session(self, query_key, query_value):
+        '''returns list of sessions if query_value found in query_key '''
+        return [(k, v) for (k, v) in self.acconf.items()
+                if query_key in v and v[query_key == query_value]]
+
+    def local_cherrypy(self):
+        # adding cherrypy into reactor loop
+        CONF = {'/': {'tools.session_auth.on': True,
+                      'tools.sessions.on': True,
+                      'tools.staticdir.on': True,
+                      'tools.staticdir.dir': self.acconf['http_shared_dir'],
+                      'tools.staticdir.index': self.acconf['http_shared_index']}}
+
+        wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
+        cherrypy.tools.session_auth = cherrypy.Tool('before_handler', shared_secret)
+        cherrypy.config.update({'engine.autoreload.on': False})
+        cherrypy.server.unsubscribe()
+        task.LoopingCall(lambda: cherrypy.engine.publish('main')).start(0.1)
+        reactor.addSystemEventTrigger('after', 'startup',
+                                      cherrypy.engine.start)
+        reactor.addSystemEventTrigger('before', 'shutdown',
+                                      cherrypy.engine.exit)
+        resource = WSGIResource(reactor, reactor.getThreadPool(), wsgiapp)
+        site = server.Site(resource)
+        reactor.listenTCP(self.acconf['cherrypy_port'], site)
 
 
 def shared_secret(*args, **kwargs):
-    if cherrypy.request.params.get(ACCONF['shared_secret']):
-        cherrypy.session[ACCONF['shared_secret']] = True
+    if cherrypy.request.params.get(ACCONFS['shared_secret']):
+        cherrypy.session[ACCONFS['shared_secret']] = True
         raise cherrypy.HTTPRedirect("/")
 
-    if not cherrypy.session.get(ACCONF['shared_secret']):
+    if not cherrypy.session.get(ACCONFS['shared_secret']):
         raise cherrypy.HTTPError("403 Forbidden")
 
 
@@ -306,8 +409,10 @@ if __name__ == '__main__':
     if len(sys.argv) >= 1:
         if len(sys.argv) == 2:
             ACCONF = json.load(open(sys.argv[2]))
+            ACCONFS = [ts for ts in ACCONF['sessions'].values()][0]
         else:
             ACCONF = json.load(open("accorder.json"))
+            ACCONFS = [ts for ts in ACCONF['sessions'].values()][0]
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
@@ -318,30 +423,10 @@ if __name__ == '__main__':
 
         from twisted.internet import reactor
 
-        # adding cherrypy into reactor loop
-        CONF = {'/': {'tools.session_auth.on': True,
-                      'tools.sessions.on': True,
-                      'tools.staticdir.on': True,
-                      'tools.staticdir.dir': ACCONF['http_shared_dir'],
-                      'tools.staticdir.index': ACCONF['http_shared_index']}}
-
-        wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
-        cherrypy.tools.session_auth = cherrypy.Tool('before_handler', shared_secret)
-        cherrypy.config.update({'engine.autoreload.on': False})
-        cherrypy.server.unsubscribe()
-        task.LoopingCall(lambda: cherrypy.engine.publish('main')).start(0.1)
-        reactor.addSystemEventTrigger('after', 'startup',
-                                      cherrypy.engine.start)
-        reactor.addSystemEventTrigger('before', 'shutdown',
-                                      cherrypy.engine.exit)
-        resource = WSGIResource(reactor, reactor.getThreadPool(), wsgiapp)
-        site = server.Site(resource)
-        reactor.listenTCP(ACCONF['cherrypy_port'], site)
-
         # pyqt gui stuff
-        main = Gooee(
-            url=u"ws://127.0.0.1:8080/ws", realm="realm1", acconf=ACCONF)
-        main.show()
+        gooee = Gooee(url=u"ws://127.0.0.1:8080/ws", realm="realm1", acconf=ACCONF)
+        snipdom = Snipdom(gooee)
+        snipdom.vsplit.insertWidget(0, gooee)
+        snipdom.show()
 
-        # run twisted reactor
         reactor.run()
