@@ -47,14 +47,6 @@ import qt5reactor
 
 from IPython.qt.console.rich_ipython_widget import RichJupyterWidget
 from IPython.qt.inprocess import QtInProcessKernelManager
-# from IPython.lib import guisupport
-
-
-class Js2Py(QObject):
-    sent = pyqtSignal(str)
-
-    def sendToPython(self, s):
-        self.sent.emit(s)
 
 
 class Snipdom(QMainWindow):
@@ -70,7 +62,7 @@ class Snipdom(QMainWindow):
         self.kernel = self.kernel_manager.kernel
         self.kernel.gui = 'qt'
 
-        self.control = RichJupyterWidget(gui_completion="droplist")
+        control = RichJupyterWidget(gui_completion="droplist")
 
         self.kernel.shell.push({'snipdom': self})
         self.kernel.shell.push({'gooee': self.gooee})
@@ -78,35 +70,27 @@ class Snipdom(QMainWindow):
         kernel_client = self.kernel_manager.client()
         kernel_client.start_channels()
 
-        self.control.kernel_manager = self.kernel_manager
-        self.control.kernel_client = kernel_client
+        control.kernel_manager = self.kernel_manager
+        control.kernel_client = kernel_client
 
         self.vsplit = QSplitter()
         self.vsplit.setOrientation(Qt.Vertical)
 
-        self.vsplit.addWidget(self.control)
+        self.vsplit.addWidget(control)
         self.hsplit.addWidget(self.vsplit)
 
-        self.sendButton = QPushButton("send")
-        # self.sendButton.clicked.connect(self.sendcode)
-        self.vsplit.addWidget(self.sendButton)
-
-        self.bridge = Js2Py()
-        self.bridge.sent.connect(self.codeFromJs)
-
-        # lab = QtGui.QLabel(kernel.shell.history_manager.get_range(start=-1).next()[2])
-
-    def codeFromJs(self, code):
-        self.control.input_buffer = code
-
     def closeEvent(self, ev):
+        print("close event!")
         self.gooee.ssh_tunnel.kill_tunnel()
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
+            print("threadpool.stopped!")
         else:
-            reactor.stop
+            reactor.stop()
+            print("reactor.stopped")
         self.kernel_manager.shutdown_kernel()
         self.kernel_manager.client().stop_channels()
+        print("ipython kernel_manager shutdown!")
         app.quit()
 
 
