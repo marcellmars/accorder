@@ -132,7 +132,9 @@ class SSHTunnel(QObject, ProcessProtocol):
 
     def kill_tunnel(self):
         try:
-            self.transport.signalProcess('KILL')
+            if self.transport:
+                print("kill transport: {}".format(self.transport))
+                self.transport.signalProcess('KILL')
         except error.ProcessExitedAlready:
             self.ssh_log.emit(u"Tunnel already dead...")
 
@@ -162,9 +164,14 @@ class Gooee(QDialog):
 
         self.url = url
         self.realm = realm
+
+        # to be developed further into session dispatcher
+        # for now it should just pick up the first session from json conf
         self.acconf = [ts for ts in acconf['sessions'].values()][0]
-        # self.temp_session = [ts for ts in self.acconf['sessions'].values()][0]
-        self.shared_secret = uuid.UUID(self.acconf['shared_secret'])
+
+        # it picks up shared secret from json conf but it also
+        # can be changed via gui in this testing phase
+        self.change_shared_secret(uuid.UUID(self.acconf['shared_secret']))
         self.session = None
         self.subscriptions = {}
 
@@ -183,19 +190,42 @@ class Gooee(QDialog):
         self.vlayout = QVBoxLayout()
         self.setLayout(self.vlayout)
 
+        self.ss_message_layout = QHBoxLayout()
+        self.ss_message_container = QWidget()
+        self.ss_message_container.setLayout(self.ss_message_layout)
+
+        self.ss_label = QLabel("Shared secret: ")
+
+        self.ss_message = QLineEdit(str(self.shared_secret))
+        self.ss_message.setObjectName("shared_secret")
+        self.ss_message.setSizePolicy(QSizePolicy.Expanding,
+                                       QSizePolicy.Expanding)
+        self.ss_message.setToolTip("change the shared secret")
+
+        self.ss_apply = QPushButton("Apply")
+        self.ss_apply.clicked.connect(
+            lambda: self.change_shared_secret(
+                uuid.UUID(self.ss_message.text())
+            )
+        )
+
+        self.ss_message_layout.addWidget(self.ss_label)
+        self.ss_message_layout.addWidget(self.ss_message)
+        self.ss_message_layout.addWidget(self.ss_apply)
+
         self.pub_message_layout = QHBoxLayout()
         self.pub_message_container = QWidget()
         self.pub_message_container.setLayout(self.pub_message_layout)
 
         self.publish_label = QLabel("Publish: ")
 
-        self.pub_message = QLineEdit("message")
+        self.pub_message = QLineEdit("Lorem ipsum...")
         self.pub_message.setObjectName("message")
         self.pub_message.setSizePolicy(QSizePolicy.Expanding,
                                        QSizePolicy.Expanding)
         self.pub_message.setToolTip("Type your message here")
 
-        self.publish_channel = QLineEdit("com.accorder.js")
+        self.publish_channel = QLineEdit("com.accorder.default")
         self.send_message = QPushButton("Publish")
 
         self.send_message.clicked.connect(
@@ -206,8 +236,6 @@ class Gooee(QDialog):
                      )}
             )
         )
-
-        self.send_message.clicked.connect(self.ssh_tunnel.kill_tunnel)
 
         self.pub_message_layout.addWidget(self.publish_label)
         self.pub_message_layout.addWidget(self.publish_channel)
@@ -220,12 +248,12 @@ class Gooee(QDialog):
 
         self.subscribe_label = QLabel("Subscribe: ")
 
-        self.sub_callback = QLineEdit("self.on_js_message")
+        self.sub_callback = QLineEdit("on_message")
         self.sub_callback.setObjectName("callback")
         self.sub_callback.setSizePolicy(QSizePolicy.Expanding,
                                         QSizePolicy.Expanding)
 
-        self.subscribe_channel = QLineEdit("com.accorder.js")
+        self.subscribe_channel = QLineEdit("com.accorder.default")
         self.subscribe = QPushButton("Subscribe")
 
         self.subscribe.clicked.connect(
@@ -240,15 +268,14 @@ class Gooee(QDialog):
         self.sub_message_layout.addWidget(self.sub_callback)
         self.sub_message_layout.addWidget(self.subscribe)
 
-        self.py_recv = QLabel("From py: ")
-        self.js_recv = QLabel("From js: ")
+        self.default_recv = QLabel("Default channel: ")
         self.watch_state_machine = QLabel("State (machine): ")
         self.watch_ssh_tunnel = QLabel("SSH Tunnel: ")
 
+        self.vlayout.addWidget(self.ss_message_container)
         self.vlayout.addWidget(self.pub_message_container)
         self.vlayout.addWidget(self.sub_message_container)
-        self.vlayout.addWidget(self.py_recv)
-        self.vlayout.addWidget(self.js_recv)
+        self.vlayout.addWidget(self.default_recv)
         self.vlayout.addWidget(self.watch_state_machine)
         self.vlayout.addWidget(self.watch_ssh_tunnel)
 
@@ -269,13 +296,13 @@ class Gooee(QDialog):
         # self.decrypt.entered.connect(
         #     lambda: self.ssh_tunnel.emit_ssh_log(u"change of state in state machine"))
 
-        self.ssh_port = str(int(random.random()*48000+1024))
-        print("ssh_port: {}".format(self.ssh_port))
-        self.decrypt.entered.connect(
-            lambda: self.tunnel(self.acconf['ssh_server'],
-                                self.acconf['ssh_port'],
-                                self.ssh_port,
-                                self.acconf['cherrypy_port']))
+        # self.ssh_port = str(int(random.random()*48000+1024))
+        # print("ssh_port: {}".format(self.ssh_port))
+        # self.decrypt.entered.connect(
+        #     lambda: self.tunnel(self.acconf['ssh_server'],
+        #                         self.acconf['ssh_port'],
+        #                         self.ssh_port,
+        #                         self.acconf['cherrypy_port']))
 
         # self.decrypt.entered.connect(self.local_cherrypy)
 
@@ -305,7 +332,8 @@ class Gooee(QDialog):
     def xb_subscribe(self, c_m):
         print("subscribe: {}".format(c_m))
         # eval only for testing!!!
-        yield self.session.subscribe(eval(c_m['callback']), c_m['channel'])
+        yield self.session.subscribe(eval("self.{}".format(c_m['callback'])),
+                                     c_m['channel'])
         for s in self.session._subscriptions:
             print("subscriptions: {}".format(s))
 
@@ -323,26 +351,37 @@ class Gooee(QDialog):
         return pyaes.AESModeOfOperationCTR(self.shared_secret.bytes).decrypt(
             msg)
 
+    def change_shared_secret(self, ss):
+        print('shared secret: {}'.format(ss))
+        self.shared_secret = ss
+
+    def on_message(self, message):
+        print("on_message: {}".format(message))
+        message = self.decrypt_message(message)
+        print("decrypted: {}".format(message))
+        j = (json.loads(message.decode('utf-8')))
+        self.default_recv.setText("Default channel: {}".format(j['res']))
+
     def log_message(self, msg):
         print("LOG MESSAGE: {}".format(msg))
         self.watch_ssh_tunnel.setText("Log message: {}".format(msg))
 
-    def on_python_message(self, message):
-        print("session.id: {}".format(self.session))
-        self.py_recv.setText("From py: {}".format(message))
-        print("on_python: {}".format(message))
-        for s in self.session._subscriptions:
-            print("subscriptions (via python): {}".print(s))
+    # def on_python_message(self, message):
+    #     print("session.id: {}".format(self.session))
+    #     self.default_recv.setText("From py: {}".format(message))
+    #     print("on_python: {}".format(message))
+    #     for s in self.session._subscriptions:
+    #         print("subscriptions (via python): {}".print(s))
 
-    def on_js_message(self, message):
-        if self.current_state == "initial_check":
-            self.check_passed.emit()
-        print("on_js_encrypted: {}".format(message))
-        message = self.decrypt_message(message)
-        print("on_js_decrypted: {}".format(message))
-        j = (json.loads(message.decode('utf-8')))
+    # def on_js_message(self, message):
+    #     if self.current_state == "initial_check":
+    #         self.check_passed.emit()
+    #     print("on_js_encrypted: {}".format(message))
+    #     message = self.decrypt_message(message)
+    #     print("on_js_decrypted: {}".format(message))
+    #     j = (json.loads(message.decode('utf-8')))
 
-        self.js_recv.setText("Received message: {}".format(j['res']))
+    #     self.js_recv.setText("Received message: {}".format(j['res']))
 
     def update_current_state(self, message):
         self.current_state = message
