@@ -59,7 +59,7 @@
             "components": [
                 {
                     "type": "class",
-                    "classname": "server.AppSession",
+                    "classname": "server.accorder.AppSession",
                     "realm": "realm1",
                     "transport": {
                         "type": "websocket",

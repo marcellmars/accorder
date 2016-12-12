@@ -94,6 +94,54 @@ class Snipdom(QMainWindow):
         app.quit()
 
 
+class LoganHandshake(QStateMachine):
+    def __init__(self, prnt):
+        QStateMachine.__init__(self)
+        self.prnt = prnt
+        self.current_state = "not initialized"
+        # self.machine = QStateMachine()
+
+        self.initial_check = QState()
+        self.initial_check.setObjectName("initial_check")
+        self.initial_check.entered.connect(
+            lambda: self.prnt.update_current_state("initial_check"))
+
+        self.decrypt = QState()
+        self.decrypt.setObjectName("decrypt")
+        self.decrypt.entered.connect(
+            lambda: self.prnt.update_current_state("decrypt"))
+
+        # self.decrypt.entered.connect(
+        #     lambda: self.ssh_tunnel.emit_ssh_log(u"change of state in state machine"))
+
+        # self.ssh_port = str(int(random.random()*48000+1024))
+        # print("ssh_port: {}".format(self.ssh_port))
+        # self.decrypt.entered.connect(
+        #     lambda: self.tunnel(self.acconf['ssh_server'],
+        #                         self.acconf['ssh_port'],
+        #                         self.ssh_port,
+        #                         self.acconf['cherrypy_port']))
+
+        # self.decrypt.entered.connect(self.local_cherrypy)
+
+        self.chat = QState()
+        self.chat.setObjectName("chat")
+        self.chat.entered.connect(lambda: self.prnt.update_current_state("chat"))
+
+        self.initial_check.addTransition(self.prnt.check_passed, self.decrypt)
+        self.decrypt.addTransition(self.prnt.ssh_tunnel.ssh_ended, self.chat)
+        self.chat.addTransition(self.initial_check)
+
+        self.addState(self.initial_check)
+        self.addState(self.decrypt)
+        self.addState(self.chat)
+
+        self.setInitialState(self.initial_check)
+        self.start()
+
+        # self.ssh_tunnel.emit_ssh_log(u"FooBar!!")
+
+
 class SSHTunnel(QObject, ProcessProtocol):
     ssh_log = pyqtSignal(str, name="ssh_log")
     ssh_ended = pyqtSignal()
@@ -142,6 +190,7 @@ class CrossClient(QObject, ApplicationSession):
 class Gooee(QDialog):
     check_passed = pyqtSignal()
     decrypted = pyqtSignal()
+    cherry_error = pyqtSignal()
 
     def __init__(self, url, realm, acconf, parent=None):
         QDialog.__init__(self)
@@ -156,6 +205,9 @@ class Gooee(QDialog):
         # it picks up shared secret from json conf but it also
         # can be changed via gui in this testing phase
         self.change_shared_secret(uuid.UUID(self.acconf['shared_secret']))
+
+        self.task_link = {}
+
         self.session = None
         self.subscriptions = {}
 
@@ -263,49 +315,7 @@ class Gooee(QDialog):
         self.vlayout.addWidget(self.watch_state_machine)
         self.vlayout.addWidget(self.watch_ssh_tunnel)
 
-        # state machine
-        self.current_state = "not initialized"
-        self.machine = QStateMachine()
-
-        self.initial_check = QState()
-        self.initial_check.setObjectName("initial_check")
-        self.initial_check.entered.connect(
-            lambda: self.update_current_state("initial_check"))
-
-        self.decrypt = QState()
-        self.decrypt.setObjectName("decrypt")
-        self.decrypt.entered.connect(
-            lambda: self.update_current_state("decrypt"))
-
-        # self.decrypt.entered.connect(
-        #     lambda: self.ssh_tunnel.emit_ssh_log(u"change of state in state machine"))
-
-        # self.ssh_port = str(int(random.random()*48000+1024))
-        # print("ssh_port: {}".format(self.ssh_port))
-        # self.decrypt.entered.connect(
-        #     lambda: self.tunnel(self.acconf['ssh_server'],
-        #                         self.acconf['ssh_port'],
-        #                         self.ssh_port,
-        #                         self.acconf['cherrypy_port']))
-
-        # self.decrypt.entered.connect(self.local_cherrypy)
-
-        self.chat = QState()
-        self.chat.setObjectName("chat")
-        self.chat.entered.connect(lambda: self.update_current_state("chat"))
-
-        self.initial_check.addTransition(self.check_passed, self.decrypt)
-        self.decrypt.addTransition(self.ssh_tunnel.ssh_ended, self.chat)
-        self.chat.addTransition(self.initial_check)
-
-        self.machine.addState(self.initial_check)
-        self.machine.addState(self.decrypt)
-        self.machine.addState(self.chat)
-
-        self.machine.setInitialState(self.initial_check)
-        self.machine.start()
-
-        # self.ssh_tunnel.emit_ssh_log(u"FooBar!!")
+        self.task_link = {self.acconf['name']: LoganHandshake(self)}
 
     @inlineCallbacks
     def xb_publish(self, c_m):
@@ -350,23 +360,6 @@ class Gooee(QDialog):
         print("LOG MESSAGE: {}".format(msg))
         self.watch_ssh_tunnel.setText("Log message: {}".format(msg))
 
-    # def on_python_message(self, message):
-    #     print("session.id: {}".format(self.session))
-    #     self.default_recv.setText("From py: {}".format(message))
-    #     print("on_python: {}".format(message))
-    #     for s in self.session._subscriptions:
-    #         print("subscriptions (via python): {}".print(s))
-
-    # def on_js_message(self, message):
-    #     if self.current_state == "initial_check":
-    #         self.check_passed.emit()
-    #     print("on_js_encrypted: {}".format(message))
-    #     message = self.decrypt_message(message)
-    #     print("on_js_decrypted: {}".format(message))
-    #     j = (json.loads(message.decode('utf-8')))
-
-    #     self.js_recv.setText("Received message: {}".format(j['res']))
-
     def update_current_state(self, message):
         self.current_state = message
         self.watch_state_machine.setText("Current (machine) state: {}".format(
@@ -403,13 +396,17 @@ class Gooee(QDialog):
         cherrypy.tools.session_auth = cherrypy.Tool('before_handler', shared_secret)
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
-        task.LoopingCall(lambda: cherrypy.engine.publish('main')).start(0.1)
+        cherry_loop = task.LoopingCall(lambda: cherrypy.engine.publish('main'))
+        cherry_error = cherry_loop.start(0.1)
+
         reactor.addSystemEventTrigger('after', 'startup',
                                       cherrypy.engine.start)
         reactor.addSystemEventTrigger('before', 'shutdown',
                                       cherrypy.engine.exit)
         resource = WSGIResource(reactor, reactor.getThreadPool(), wsgiapp)
         site = server.Site(resource)
+        cherry_error.addErrback(self.cherry_error.emit())
+        cherry_error.addCallback(self.cherry_error.emit())
         reactor.listenTCP(self.acconf['cherrypy_port'], site)
 
 
