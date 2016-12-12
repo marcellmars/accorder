@@ -8,7 +8,6 @@ import sys
 import json
 import uuid
 import signal
-import random
 
 import pyaes
 
@@ -27,8 +26,6 @@ from PyQt5.Qt import QHBoxLayout
 from PyQt5.Qt import QSizePolicy
 from PyQt5.Qt import QVBoxLayout
 from PyQt5.Qt import QWidget
-from PyQt5.Qt import QStateMachine
-from PyQt5.Qt import QState
 from PyQt5.Qt import pyqtSignal
 
 from autobahn.twisted.wamp import ApplicationSession
@@ -38,8 +35,6 @@ from autobahn.wamp.types import CloseDetails
 
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet import task
-from twisted.internet import error
-from twisted.internet.protocol import ProcessProtocol
 from twisted.web.wsgi import WSGIResource
 from twisted.web import server
 
@@ -47,6 +42,9 @@ import qt5reactor
 
 from IPython.qt.console.rich_ipython_widget import RichJupyterWidget
 from IPython.qt.inprocess import QtInProcessKernelManager
+
+from statemachines import LoganHandshake
+from externalprocesses import SSHTunnel
 
 
 class Snipdom(QMainWindow):
@@ -94,83 +92,6 @@ class Snipdom(QMainWindow):
         app.quit()
 
 
-class LoganHandshake(QStateMachine):
-    def __init__(self, prnt):
-        QStateMachine.__init__(self)
-        self.prnt = prnt
-        self.current_state = "not initialized"
-        # self.machine = QStateMachine()
-
-        self.initial_check = QState()
-        self.initial_check.setObjectName("initial_check")
-        self.initial_check.entered.connect(
-            lambda: self.prnt.update_current_state("initial_check"))
-
-        self.decrypt = QState()
-        self.decrypt.setObjectName("decrypt")
-        self.decrypt.entered.connect(
-            lambda: self.prnt.update_current_state("decrypt"))
-
-        # self.decrypt.entered.connect(
-        #     lambda: self.ssh_tunnel.emit_ssh_log(u"change of state in state machine"))
-
-        # self.ssh_port = str(int(random.random()*48000+1024))
-        # print("ssh_port: {}".format(self.ssh_port))
-        # self.decrypt.entered.connect(
-        #     lambda: self.tunnel(self.acconf['ssh_server'],
-        #                         self.acconf['ssh_port'],
-        #                         self.ssh_port,
-        #                         self.acconf['cherrypy_port']))
-
-        # self.decrypt.entered.connect(self.local_cherrypy)
-
-        self.chat = QState()
-        self.chat.setObjectName("chat")
-        self.chat.entered.connect(lambda: self.prnt.update_current_state("chat"))
-
-        self.initial_check.addTransition(self.prnt.check_passed, self.decrypt)
-        self.decrypt.addTransition(self.prnt.ssh_tunnel.ssh_ended, self.chat)
-        self.chat.addTransition(self.initial_check)
-
-        self.addState(self.initial_check)
-        self.addState(self.decrypt)
-        self.addState(self.chat)
-
-        self.setInitialState(self.initial_check)
-        self.start()
-
-        # self.ssh_tunnel.emit_ssh_log(u"FooBar!!")
-
-
-class SSHTunnel(QObject, ProcessProtocol):
-    ssh_log = pyqtSignal(str, name="ssh_log")
-    ssh_ended = pyqtSignal()
-
-    def __init__(self):
-        QObject.__init__(self)
-
-    def childDataReceived(self, cfd, data):
-        print(u"{}".format(data.decode()))
-        self.ssh_log.emit(u"{}".format(data.decode()[:30]))
-
-    def connectionMade(self):
-        print(u"Tunnel established...")
-        self.ssh_log.emit(u"Tunnel established...")
-
-    def processEnded(self, reason):
-        self.ssh_log.emit(u"Tunnel is dead!")
-        self.ssh_ended.emit()
-        print(u"SSH ended: {}".format(reason))
-
-    def kill_tunnel(self):
-        try:
-            if self.transport:
-                print("kill transport: {}".format(self.transport))
-                self.transport.signalProcess('KILL')
-        except error.ProcessExitedAlready:
-            self.ssh_log.emit(u"Tunnel already dead...")
-
-
 class CrossClient(QObject, ApplicationSession):
     joinedSession = pyqtSignal(SessionDetails)
     leftSession = pyqtSignal(CloseDetails)
@@ -188,8 +109,15 @@ class CrossClient(QObject, ApplicationSession):
 
 
 class Gooee(QDialog):
-    check_passed = pyqtSignal()
-    decrypted = pyqtSignal()
+    init_chat = pyqtSignal()
+    chat = pyqtSignal()
+    chat_end = pyqtSignal()
+    init_run = pyqtSignal()
+    run = pyqtSignal()
+    run_end = pyqtSignal()
+
+    the_end = pyqtSignal()
+
     cherry_error = pyqtSignal()
 
     def __init__(self, url, realm, acconf, parent=None):
@@ -235,7 +163,7 @@ class Gooee(QDialog):
         self.ss_message = QLineEdit(str(self.shared_secret))
         self.ss_message.setObjectName("shared_secret")
         self.ss_message.setSizePolicy(QSizePolicy.Expanding,
-                                       QSizePolicy.Expanding)
+                                      QSizePolicy.Expanding)
         self.ss_message.setToolTip("change the shared secret")
 
         self.ss_apply = QPushButton("Apply")
@@ -362,7 +290,7 @@ class Gooee(QDialog):
 
     def update_current_state(self, message):
         self.current_state = message
-        self.watch_state_machine.setText("Current (machine) state: {}".format(
+        self.watch_state_machine.setText("FSM: {}".format(
             self.current_state))
         print("update_current_state: {}".format(message))
 
