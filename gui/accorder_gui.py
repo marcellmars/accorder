@@ -40,55 +40,74 @@ from twisted.web import server
 
 import qt5reactor
 
-from IPython.qt.console.rich_ipython_widget import RichJupyterWidget
-from IPython.qt.inprocess import QtInProcessKernelManager
-
 from statemachines import LoganHandshake
 from externalprocesses import SSHTunnel
 
 
-class Snipdom(QMainWindow):
-    def __init__(self, gooee):
-        QMainWindow.__init__(self)
-        self.gooee = gooee
+DTAP_STAGE = 'development'
+# DTAP_STAGE = 'testing'
 
-        self.hsplit = QSplitter()
-        self.setCentralWidget(self.hsplit)
 
+class Snipdom:
+    def __init__(self, accorder):
+        from IPython.qt.console.rich_ipython_widget import RichJupyterWidget
+        from IPython.qt.inprocess import QtInProcessKernelManager
+
+        self.accorder = accorder
         self.kernel_manager = QtInProcessKernelManager()
         self.kernel_manager.start_kernel()
         self.kernel = self.kernel_manager.kernel
         self.kernel.gui = 'qt'
 
-        control = RichJupyterWidget(gui_completion="droplist")
+        self.control = RichJupyterWidget(gui_completion="droplist")
 
         self.kernel.shell.push({'snipdom': self})
-        self.kernel.shell.push({'gooee': self.gooee})
+        self.kernel.shell.push({'accorder': self.accorder})
+        self.kernel.shell.push({'reactor': reactor})
 
         kernel_client = self.kernel_manager.client()
         kernel_client.start_channels()
 
-        control.kernel_manager = self.kernel_manager
-        control.kernel_client = kernel_client
+        self.control.kernel_manager = self.kernel_manager
+        self.control.kernel_client = kernel_client
+
+    def widget(self):
+        return self.control
+
+    def shutdown(self):
+        self.kernel_manager.shutdown_kernel()
+        self.kernel_manager.client().stop_channels()
+        print("ipython kernel_manager shutdown!")
+
+
+class AccorderMainWindow(QMainWindow):
+    def __init__(self, accorder):
+        QMainWindow.__init__(self)
+        self.accorder = accorder
+
+        self.hsplit = QSplitter()
+        self.setCentralWidget(self.hsplit)
 
         self.vsplit = QSplitter()
         self.vsplit.setOrientation(Qt.Vertical)
 
-        self.vsplit.addWidget(control)
+        if DTAP_STAGE == 'development':
+            self.snipdom = Snipdom(self.accorder)
+            self.vsplit.addWidget(self.snipdom.widget())
+
         self.hsplit.addWidget(self.vsplit)
 
     def closeEvent(self, ev):
         print("close event!")
-        self.gooee.ssh_tunnel.kill_tunnel()
+        self.accorder.ssh_tunnel.kill_tunnel()
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
             print("threadpool.stopped!")
         else:
             reactor.stop()
             print("reactor.stopped")
-        self.kernel_manager.shutdown_kernel()
-        self.kernel_manager.client().stop_channels()
-        print("ipython kernel_manager shutdown!")
+            if DTAP_STAGE == 'development':
+                self.snipdom.shutdown()
         app.quit()
 
 
@@ -108,7 +127,7 @@ class CrossClient(QObject, ApplicationSession):
         self.leftSession.emit(details)
 
 
-class Gooee(QDialog):
+class AccorderGUI(QDialog):
     init_chat = pyqtSignal()
     chat = pyqtSignal()
     chat_end = pyqtSignal()
@@ -118,7 +137,7 @@ class Gooee(QDialog):
 
     the_end = pyqtSignal()
 
-    cherry_error = pyqtSignal()
+    cherry_error = pyqtSignal(object)
 
     def __init__(self, url, realm, acconf, parent=None):
         QDialog.__init__(self)
@@ -284,9 +303,13 @@ class Gooee(QDialog):
         j = (json.loads(message.decode('utf-8')))
         self.default_recv.setText("Default channel: {}".format(j['res']))
 
-    def log_message(self, msg):
+    def log_message(self, msg="nothing passed..."):
         print("LOG MESSAGE: {}".format(msg))
         self.watch_ssh_tunnel.setText("Log message: {}".format(msg))
+
+    def log_cherry(self, e):
+        print("LOG MESSAGE: {}".format(str(e)))
+        self.watch_ssh_tunnel.setText("Log message: {}".format(str(e)))
 
     def update_current_state(self, message):
         self.current_state = message
@@ -294,7 +317,12 @@ class Gooee(QDialog):
             self.current_state))
         print("update_current_state: {}".format(message))
 
-    def tunnel(self, ssh_server, ssh_port, rport, lport):
+    def tunnel(self):
+        ssh_server = self.acconf['ssh_server']
+        rport = self.acconf['ssh_remote_port']
+        lport = self.acconf['cherrypy_port']
+        ssh_port = self.acconf['ssh_port']
+
         ssh_options = ['-T', '-N', '-g', '-C',
                        '-c', 'arcfour,aes128-cbc,blowfish-cbc',
                        '-o', 'TCPKeepAlive=yes',
@@ -324,8 +352,8 @@ class Gooee(QDialog):
         cherrypy.tools.session_auth = cherrypy.Tool('before_handler', shared_secret)
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
-        cherry_loop = task.LoopingCall(lambda: cherrypy.engine.publish('main'))
-        cherry_error = cherry_loop.start(0.1)
+        self.cherry_loop = task.LoopingCall(lambda: cherrypy.engine.publish('main'))
+        cherry_logs = self.cherry_loop.start(0.1)
 
         reactor.addSystemEventTrigger('after', 'startup',
                                       cherrypy.engine.start)
@@ -333,9 +361,10 @@ class Gooee(QDialog):
                                       cherrypy.engine.exit)
         resource = WSGIResource(reactor, reactor.getThreadPool(), wsgiapp)
         site = server.Site(resource)
-        cherry_error.addErrback(self.cherry_error.emit())
-        cherry_error.addCallback(self.cherry_error.emit())
-        reactor.listenTCP(self.acconf['cherrypy_port'], site)
+        cherry_logs.addErrback(self.cherry_error.emit)
+        cherry_logs.addCallback(self.cherry_error.emit)
+        self.cherry_error.connect(self.log_cherry)
+        self.cherry_connection = reactor.listenTCP(self.acconf['cherrypy_port'], site)
 
 
 def shared_secret(*args, **kwargs):
@@ -365,16 +394,16 @@ if __name__ == '__main__':
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
         app = QApplication(sys.argv)
-        app.setApplicationName("gooee")
+        app.setApplicationName("accorder")
 
         qt5reactor.install()
 
         from twisted.internet import reactor
 
         # pyqt gui stuff
-        gooee = Gooee(url=u"ws://127.0.0.1:8080/ws", realm="realm1", acconf=ACCONF)
-        snipdom = Snipdom(gooee)
-        snipdom.vsplit.insertWidget(0, gooee)
+        accorder = AccorderGUI(url=u"ws://127.0.0.1:8080/ws", realm="realm1", acconf=ACCONF)
+        snipdom = AccorderMainWindow(accorder)
+        snipdom.vsplit.insertWidget(0, accorder)
         snipdom.show()
 
         reactor.run()

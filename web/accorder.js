@@ -31,7 +31,9 @@ connection.onopen = function(session, details) {
     );
 
     $("#bang").click(function() {
-        session.publish('com.accorder.js', [JSON.stringify({'res':'syn!'})]);
+        session.publish('com.accorder.js', [JSON.stringify({
+            'res': 'syn!'
+        })]);
     });
 };
 
