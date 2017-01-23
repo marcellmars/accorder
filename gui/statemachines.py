@@ -16,16 +16,16 @@ class FooLoganChatAndRun(QObject):
         self.prnt.update_current_state(str(self.current_state))
 
     def create_state(self):
-        # logan has two parallel states:
+        # ssh_rsync has two parallel states:
         # logans_chat & logans_run
-        # logan can chat & run in parallel
+        # ssh_rsync can chat & run in parallel
         # the_end ends every chat and every run
         # and it reverts it to initial states
-        logan = QState(QState.ParallelStates, self.fsm)
+        ssh_rsync = QState(QState.ParallelStates, self.fsm)
 
-        logans_chat = QState(logan)
-        logans_run = QState(logan)
-        the_end = QState(logan)
+        logans_chat = QState(ssh_rsync)
+        logans_run = QState(ssh_rsync)
+        the_end = QState(ssh_rsync)
 
         init_chat = QState(logans_chat)
         init_chat.entered.connect(
@@ -59,11 +59,11 @@ class FooLoganChatAndRun(QObject):
         the_end.addTransition(self.prnt.the_end, logans_run)
         the_end.addTransition(self.prnt.the_end, logans_chat)
 
-        self.fsm.setInitialState(logan)
+        self.fsm.setInitialState(ssh_rsync)
         self.fsm.start()
 
 
-class LoganHandshake(QObject):
+class SshRsync(QObject):
     def __init__(self, prnt):
         QObject.__init__(self)
         self.prnt = prnt
@@ -76,48 +76,32 @@ class LoganHandshake(QObject):
         self.prnt.update_current_state(str(self.current_state))
 
     def create_state(self):
-        # logan has two parallel states:
-        # logans_chat & logans_run
-        # logan can chat & run in parallel
-        # the_end ends every chat and every run
-        # and it reverts it to initial states
-        logan = QState(QState.ParallelStates, self.fsm)
+        logan_jessica = QState(QState.ParallelStates, self.fsm)
 
-        logans_chat = QState(logan)
-        logans_run = QState(logan)
-        the_end = QState(logan)
+        jessica_session = QState(logan_jessica)
+        init_jessica = QState(jessica_session)
+        ssh_jessica = QState(jessica_session)
+        rsync_jessica = QState(jessica_session)
 
-        init_chat = QState(logans_chat)
-        init_chat.entered.connect(
-            lambda: self.update_current_state(("logans_chat", "init_chat"))
+        logan_session = QState(logan_jessica)
+        init_logan = QState(logan_session)
+        ssh_logan = QState(logan_session)
+        rsync_logan = QState(logan_session)
+
+        init_jessica.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "init_jessica"))
         )
 
-        chat = QState(logans_chat)
-        chat.entered.connect(
-            lambda: self.update_current_state(("logans_chat", "chat"))
+        ssh_jessica.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "ssh_jessica"))
         )
 
-        init_run = QState(logans_run)
-        init_run.entered.connect(
-            lambda: self.update_current_state(("logans_run", "init_run"))
-        )
+        jessica_session.setInitialState(init_jessica)
+        logan_session.setInitialState(init_logan)
 
-        run = QState(logans_run)
-        run.entered.connect(
-            lambda: self.update_current_state(("logans_run", "run"))
-        )
+        init_jessica.addTransition(self.prnt.jessica_init_config, ssh_jessica)
+        ssh_jessica.addTransition(self.prnt.jessica_ssh_established, rsync_jessica)
 
-        logans_run.setInitialState(init_run)
-        logans_chat.setInitialState(init_chat)
 
-        init_run.addTransition(self.prnt.run, run)
-        run.addTransition(self.prnt.run_end, init_run)
-
-        init_chat.addTransition(self.prnt.chat, chat)
-        chat.addTransition(self.prnt.chat_end, init_chat)
-
-        the_end.addTransition(self.prnt.the_end, logans_run)
-        the_end.addTransition(self.prnt.the_end, logans_chat)
-
-        self.fsm.setInitialState(logan)
+        self.fsm.setInitialState(logan_jessica)
         self.fsm.start()

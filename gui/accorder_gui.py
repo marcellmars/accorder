@@ -8,6 +8,7 @@ import sys
 import json
 import uuid
 import signal
+from functools import wraps
 
 import pyaes
 
@@ -40,12 +41,29 @@ from twisted.web import server
 
 import qt5reactor
 
-from statemachines import LoganHandshake
+# from statemachines import FooLoganChatAndRun
+from statemachines import SshRsync
 from externalprocesses import SSHTunnel
 
 
 DTAP_STAGE = 'development'
 # DTAP_STAGE = 'testing'
+
+
+def check_secret(fn):
+    @wraps(fn)
+    def _impl(self, *args):
+        self.path_hash = "file_hash_{}".format(args[0])
+        h = self.d.get(args[0][1:].encode('utf8'))
+        print("FN: {}\nPATH: {}\nHASH: {}\n".format(fn, args[0], h))
+        if h:
+            args = list(args)
+            args[0] = h
+            tuple(args)
+            return fn(self, *args)
+        else:
+            return fn(self, *args)
+    return _impl
 
 
 class Snipdom:
@@ -123,11 +141,13 @@ class CrossClient(QObject, ApplicationSession):
     def onJoin(self, details):
         yield self.joinedSession.emit(details)
 
+    @inlineCallbacks
     def onLeave(self, details):
-        self.leftSession.emit(details)
+        yield self.leftSession.emit(details)
 
 
 class AccorderGUI(QDialog):
+    # signals sent to statemachines.FooLoganChatAndRun
     init_chat = pyqtSignal()
     chat = pyqtSignal()
     chat_end = pyqtSignal()
@@ -139,6 +159,14 @@ class AccorderGUI(QDialog):
 
     cherry_error = pyqtSignal(object)
 
+    # signals sent to statemachines.SshRsync
+    jessica_init_config = pyqtSignal()
+    jessica_ssh_established = pyqtSignal()
+    jessica_rsync = pyqtSignal()
+    logan_init_config = pyqtSignal()
+    logan_ssh_established = pyqtSignal()
+    logan_rsync = pyqtSignal()
+
     def __init__(self, url, realm, acconf, parent=None):
         QDialog.__init__(self)
 
@@ -148,12 +176,12 @@ class AccorderGUI(QDialog):
         # to be developed further into session dispatcher
         # for now it should just pick up the first session from json conf
         self.acconf = [ts for ts in acconf['sessions'].values()][0]
+        # self.film_role = "logan"
+        self.film_role = "jessica"
 
         # it picks up shared secret from json conf but it also
         # can be changed via gui in this testing phase
-        self.change_shared_secret(uuid.UUID(self.acconf['shared_secret']))
-
-        self.task_link = {}
+        self.change_shared_secret(self.acconf['shared_secret'])
 
         self.session = None
         self.subscriptions = {}
@@ -262,7 +290,8 @@ class AccorderGUI(QDialog):
         self.vlayout.addWidget(self.watch_state_machine)
         self.vlayout.addWidget(self.watch_ssh_tunnel)
 
-        self.task_link = {self.acconf['name']: LoganHandshake(self)}
+        # self.state_machine = FooLoganChatAndRun(self)
+        self.state_machine = SshRsync(self)
 
     @inlineCallbacks
     def xb_publish(self, c_m):
@@ -278,19 +307,35 @@ class AccorderGUI(QDialog):
         for s in self.session._subscriptions:
             print("subscriptions: {}".format(s))
 
+    @inlineCallbacks
+    def xb_fetch_conf(self, acconf):
+        print("subscribe: {}".format(acconf))
+
+    @inlineCallbacks
+    def xb_send_conf(self):
+        print("send conf: {}".format(self.acconf))
+
+    def banana(self):
+        return self.session._session_id
+
     def on_join_session(self):
+        monkey_eats = "__{}_{}_{}".format(str(self.shared_secret),
+                                          self.film_role,
+                                          "get_session_id")
+        print("monkey get_session_id: com.accorder.{}".format(monkey_eats))
+        setattr(self, monkey_eats, self.banana)
+        self.session.register(eval("self.{}".format(monkey_eats)),
+                              "com.accorder.{}".format(monkey_eats))
         print("session.id: {}".format(self.session._subscriptions))
 
     def on_leave_session(self):
         print('leave')
 
     def encrypt_message(self, msg):
-        return pyaes.AESModeOfOperationCTR(self.shared_secret.bytes).encrypt(
-            msg)
+        return pyaes.AESModeOfOperationCTR(self.shared_secret.encode('utf8')).encrypt(msg)
 
     def decrypt_message(self, msg):
-        return pyaes.AESModeOfOperationCTR(self.shared_secret.bytes).decrypt(
-            msg)
+        return pyaes.AESModeOfOperationCTR(self.shared_secret.encode('utf8')).decrypt(msg)
 
     def change_shared_secret(self, ss):
         print('shared secret: {}'.format(ss))

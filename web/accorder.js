@@ -16,12 +16,14 @@ connection.onopen = function(session, details) {
     console.log("Connected");
 
     function on_event(jsn) {
-        var r = JSON.parse(jsn);
-        $("#foo").text(r.res);
-        console.log("JSON 'res' value: " + r.res);
+        console.log("on event!");
+        // var r = JSON.parse(jsn);
+        // $("#foo").text(r.res);
+        // console.log("JSON 'res' value: " + r.res);
+        console.log("Got: " + jsn);
     }
 
-    session.subscribe('com.accorder.python', on_event).then(
+    session.subscribe('com.accorder', on_event, {match:"prefix"}).then(
         function(sub) {
             console.log('subscribed to topic');
         },
@@ -31,7 +33,7 @@ connection.onopen = function(session, details) {
     );
 
     $("#bang").click(function() {
-        session.publish('com.accorder.js', [JSON.stringify({
+        session.publish('com.accorder.default', [JSON.stringify({
             'res': 'syn!'
         })]);
     });

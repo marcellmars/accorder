@@ -11,7 +11,7 @@
                             "name": "anonymous",
                             "permissions": [
                                 {
-                                    "uri": "",
+                                    "uri": "com.accorder",
                                     "match": "prefix",
                                     "allow": {
                                         "call": true,
