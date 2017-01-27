@@ -315,17 +315,12 @@ class AccorderGUI(QDialog):
     def xb_send_conf(self):
         print("send conf: {}".format(self.acconf))
 
-    def banana(self):
-        return self.session._session_id
-
     def on_join_session(self):
-        monkey_eats = "__{}_{}_{}".format(str(self.shared_secret),
-                                          self.film_role,
-                                          "get_session_id")
-        print("monkey get_session_id: com.accorder.{}".format(monkey_eats))
-        setattr(self, monkey_eats, self.banana)
-        self.session.register(eval("self.{}".format(monkey_eats)),
-                              "com.accorder.{}".format(monkey_eats))
+        get_session_id = "__{}_{}_{}".format(str(self.shared_secret),
+                                             self.film_role,
+                                             "get_session_id")
+        self.session.register(lambda: self.session._session_id,
+                              "com.accorder.{}".format(get_session_id))
         print("session.id: {}".format(self.session._subscriptions))
 
     def on_leave_session(self):
