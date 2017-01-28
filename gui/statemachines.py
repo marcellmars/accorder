@@ -4,16 +4,16 @@ from PyQt5.Qt import QState
 
 
 class FooLoganChatAndRun(QObject):
-    def __init__(self, prnt):
+    def __init__(self, pitcher):
         QObject.__init__(self)
-        self.prnt = prnt
+        self.pitcher = pitcher
         self.current_state = {}
         self.fsm = QStateMachine()
         self.create_state()
 
     def update_current_state(self, s_m):
         self.current_state[s_m[0]] = s_m[1]
-        self.prnt.update_current_state(str(self.current_state))
+        self.pitcher.update_current_state(str(self.current_state))
 
     def create_state(self):
         # ssh_rsync has two parallel states:
@@ -50,30 +50,30 @@ class FooLoganChatAndRun(QObject):
         logans_run.setInitialState(init_run)
         logans_chat.setInitialState(init_chat)
 
-        init_run.addTransition(self.prnt.run, run)
-        run.addTransition(self.prnt.run_end, init_run)
+        init_run.addTransition(self.pitcher.run, run)
+        run.addTransition(self.pitcher.run_end, init_run)
 
-        init_chat.addTransition(self.prnt.chat, chat)
-        chat.addTransition(self.prnt.chat_end, init_chat)
+        init_chat.addTransition(self.pitcher.chat, chat)
+        chat.addTransition(self.pitcher.chat_end, init_chat)
 
-        the_end.addTransition(self.prnt.the_end, logans_run)
-        the_end.addTransition(self.prnt.the_end, logans_chat)
+        the_end.addTransition(self.pitcher.the_end, logans_run)
+        the_end.addTransition(self.pitcher.the_end, logans_chat)
 
         self.fsm.setInitialState(ssh_rsync)
         self.fsm.start()
 
 
 class SshRsync(QObject):
-    def __init__(self, prnt):
+    def __init__(self, pitcher):
         QObject.__init__(self)
-        self.prnt = prnt
+        self.pitcher = pitcher
         self.current_state = {}
         self.fsm = QStateMachine()
         self.create_state()
 
     def update_current_state(self, s_m):
         self.current_state[s_m[0]] = s_m[1]
-        self.prnt.update_current_state(str(self.current_state))
+        self.pitcher.update_current_state(str(self.current_state))
 
     def create_state(self):
         logan_jessica = QState(QState.ParallelStates, self.fsm)
@@ -99,8 +99,8 @@ class SshRsync(QObject):
         jessica_session.setInitialState(init_jessica)
         logan_session.setInitialState(init_logan)
 
-        init_jessica.addTransition(self.prnt.jessica_init_config, ssh_jessica)
-        ssh_jessica.addTransition(self.prnt.jessica_ssh_established, rsync_jessica)
+        init_jessica.addTransition(self.pitcher.jessica_init_config, ssh_jessica)
+        ssh_jessica.addTransition(self.pitcher.jessica_ssh_established, rsync_jessica)
 
 
         self.fsm.setInitialState(logan_jessica)

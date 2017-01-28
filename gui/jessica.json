@@ -1,0 +1,16 @@
+{
+    "local_key": "208b8499057b43178e5099b62343fa",
+    "sessions": {
+        "311b550b03c44fae961de22337c64476": {
+            "cherrypy_port": 9989,
+            "http_shared_dir": "/home/m/CalibreLibraries/FooBar",
+            "http_shared_index": "BROWSE_LIBRARY.html",
+            "name": "jessica",
+            "film_role": "jessica",
+            "shared_secret": "208b8499057b43178e5099b62343fa94",
+            "ssh_port": "722",
+            "ssh_remote_port": "5688",
+            "ssh_server": "memoryoftheworld.org"
+        }
+    }
+}

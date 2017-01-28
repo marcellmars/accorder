@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 from __future__ import (unicode_literals, division, absolute_import,
@@ -27,6 +28,7 @@ from PyQt5.Qt import QHBoxLayout
 from PyQt5.Qt import QSizePolicy
 from PyQt5.Qt import QVBoxLayout
 from PyQt5.Qt import QWidget
+from PyQt5.Qt import QAction
 from PyQt5.Qt import pyqtSignal
 
 from autobahn.twisted.wamp import ApplicationSession
@@ -146,7 +148,7 @@ class CrossClient(QObject, ApplicationSession):
         yield self.leftSession.emit(details)
 
 
-class AccorderGUI(QDialog):
+class AccorderGUI(QMainWindow):
     # signals sent to statemachines.FooLoganChatAndRun
     init_chat = pyqtSignal()
     chat = pyqtSignal()
@@ -168,7 +170,7 @@ class AccorderGUI(QDialog):
     logan_rsync = pyqtSignal()
 
     def __init__(self, url, realm, acconf, parent=None):
-        QDialog.__init__(self)
+        QMainWindow.__init__(self)
 
         self.url = url
         self.realm = realm
@@ -176,8 +178,7 @@ class AccorderGUI(QDialog):
         # to be developed further into session dispatcher
         # for now it should just pick up the first session from json conf
         self.acconf = [ts for ts in acconf['sessions'].values()][0]
-        # self.film_role = "logan"
-        self.film_role = "jessica"
+        self.film_role = self.acconf['film_role']
 
         # it picks up shared secret from json conf but it also
         # can be changed via gui in this testing phase
@@ -198,8 +199,19 @@ class AccorderGUI(QDialog):
         self.ssh_tunnel = SSHTunnel()
         self.ssh_tunnel.ssh_log.connect(self.log_message)
 
+        # main GUI bloat
+
+        self.main_widget = QDialog()
+        self.logan_menu = self.menuBar().addMenu("&Logan")
+        self.logan_menu.addAction("Add &new sesion").triggered.connect(self.add_new_logan)
+        self.menuBar().addAction("&&").setEnabled(False)
+        self.jessica_menu = self.menuBar().addMenu("&Jessica")
+        self.jessica_menu.addAction("Add &new sesion").triggered.connect(self.add_new_jessica)
+
+        self.setCentralWidget(self.main_widget)
+
         self.vlayout = QVBoxLayout()
-        self.setLayout(self.vlayout)
+        self.main_widget.setLayout(self.vlayout)
 
         self.ss_message_layout = QHBoxLayout()
         self.ss_message_container = QWidget()
@@ -343,6 +355,12 @@ class AccorderGUI(QDialog):
         j = (json.loads(message.decode('utf-8')))
         self.default_recv.setText("Default channel: {}".format(j['res']))
 
+    def add_new_jessica(self):
+        self.log_message("new jessica!")
+
+    def add_new_logan(self):
+        self.log_message("new logan!")
+
     def log_message(self, msg="nothing passed..."):
         print("LOG MESSAGE: {}".format(msg))
         self.watch_ssh_tunnel.setText("Log message: {}".format(msg))
@@ -425,7 +443,7 @@ class Root(object):
 if __name__ == '__main__':
     if len(sys.argv) >= 1:
         if len(sys.argv) == 2:
-            ACCONF = json.load(open(sys.argv[2]))
+            ACCONF = json.load(open(sys.argv[1]))
             ACCONFS = [ts for ts in ACCONF['sessions'].values()][0]
         else:
             ACCONF = json.load(open("accorder.json"))
