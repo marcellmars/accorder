@@ -9,6 +9,7 @@ import sys
 import json
 import uuid
 import signal
+import random
 from functools import wraps
 
 import pyaes
@@ -46,6 +47,7 @@ import qt5reactor
 # from statemachines import FooLoganChatAndRun
 from statemachines import SshRsync
 from externalprocesses import SSHTunnel
+from externalprocesses import Rsync
 
 
 DTAP_STAGE = 'development'
@@ -164,7 +166,7 @@ class AccorderGUI(QMainWindow):
     # signals sent to statemachines.SshRsync
     jessica_init_config = pyqtSignal()
     jessica_ssh_established = pyqtSignal()
-    jessica_rsync = pyqtSignal()
+    jessica_rsync_established = pyqtSignal()
     logan_init_config = pyqtSignal()
     logan_ssh_established = pyqtSignal()
     logan_rsync = pyqtSignal()
@@ -199,6 +201,7 @@ class AccorderGUI(QMainWindow):
         self.ssh_tunnel = SSHTunnel()
         self.ssh_tunnel.ssh_log.connect(self.log_message)
 
+        self.rsync = Rsync()
         # main GUI bloat
 
         self.main_widget = QDialog()
@@ -357,6 +360,7 @@ class AccorderGUI(QMainWindow):
 
     def add_new_jessica(self):
         self.log_message("new jessica!")
+        self.jessica_init_config.emit()
 
     def add_new_logan(self):
         self.log_message("new logan!")
@@ -375,9 +379,11 @@ class AccorderGUI(QMainWindow):
             self.current_state))
         print("update_current_state: {}".format(message))
 
-    def tunnel(self):
+    def run_tunnel(self):
         ssh_server = self.acconf['ssh_server']
-        rport = self.acconf['ssh_remote_port']
+        # rport = self.acconf['ssh_remote_port']
+        rport = int(random.random()*48000+1024)
+        print("remote ssh port: {}".format(rport))
         lport = self.acconf['cherrypy_port']
         ssh_port = self.acconf['ssh_port']
 
@@ -388,10 +394,14 @@ class AccorderGUI(QMainWindow):
                        '-o', 'StrictHostKeyChecking=no',
                        '-o', 'ServerAliveINterval=60',
                        '-o', 'ExitOnForwardFailure=yes',
-                       '-v',
+                       # '-v',
                        ssh_server, '-l', 'tunnel', '-R',
                        '{}:localhost:{}'.format(rport, lport), '-p', ssh_port]
         reactor.spawnProcess(self.ssh_tunnel, 'ssh', ssh_options, env=os.environ)
+
+    def run_rsync(self):
+        self.local_cherrypy()
+        self.jessica_rsync_established.emit()
 
     def get_session(self, query_key, query_value):
         '''returns list of sessions if query_value found in query_key '''
