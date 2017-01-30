@@ -39,6 +39,7 @@ from autobahn.wamp.types import CloseDetails
 
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet import task
+from twisted.internet import utils
 from twisted.web.wsgi import WSGIResource
 from twisted.web import server
 
@@ -122,6 +123,7 @@ class AccorderMainWindow(QMainWindow):
     def closeEvent(self, ev):
         print("close event!")
         self.accorder.ssh_tunnel.kill_tunnel()
+        self.accorder.rsync.kill_rsync()
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
             print("threadpool.stopped!")
@@ -165,8 +167,6 @@ class AccorderGUI(QMainWindow):
 
     # signals sent to statemachines.SshRsync
     jessica_init_config = pyqtSignal()
-    jessica_ssh_established = pyqtSignal()
-    jessica_rsync_established = pyqtSignal()
     logan_init_config = pyqtSignal()
     logan_ssh_established = pyqtSignal()
     logan_rsync = pyqtSignal()
@@ -198,10 +198,11 @@ class AccorderGUI(QMainWindow):
         runner = ApplicationRunner(self.url, self.realm)
         runner.run(make, start_reactor=False)
 
-        self.ssh_tunnel = SSHTunnel()
+        self.ssh_tunnel = SSHTunnel(self.film_role)
         self.ssh_tunnel.ssh_log.connect(self.log_message)
 
-        self.rsync = Rsync()
+        self.rsync = Rsync(self.film_role)
+        self.rsync.rsync_log.connect(self.log_message)
         # main GUI bloat
 
         self.main_widget = QDialog()
@@ -379,29 +380,62 @@ class AccorderGUI(QMainWindow):
             self.current_state))
         print("update_current_state: {}".format(message))
 
+    def get_jessica_motw_port(self):
+        return self.jessica_motw_port
+
     def run_tunnel(self):
         ssh_server = self.acconf['ssh_server']
-        # rport = self.acconf['ssh_remote_port']
-        rport = int(random.random()*48000+1024)
-        print("remote ssh port: {}".format(rport))
-        lport = self.acconf['cherrypy_port']
+        # self.jessica_motw_port = self.acconf['ssh_remote_port']
+        #self.jessica_motw_port = int(random.random()*48000+1024)
+        self.jessica_motw_port = 10121
+        print("remote ssh port: {}".format(self.jessica_motw_port))
+        # lport = self.acconf['cherrypy_port']
+        jessica_rsync_port = 10101
         ssh_port = self.acconf['ssh_port']
 
-        ssh_options = ['-T', '-N', '-g', '-C',
+        ssh_options = ['ssh_accorder',
+                       '-T', '-N', '-g', '-C',
                        '-c', 'arcfour,aes128-cbc,blowfish-cbc',
                        '-o', 'TCPKeepAlive=yes',
                        '-o', 'UserKnownHostsFile=/dev/null',
                        '-o', 'StrictHostKeyChecking=no',
                        '-o', 'ServerAliveINterval=60',
                        '-o', 'ExitOnForwardFailure=yes',
-                       # '-v',
-                       ssh_server, '-l', 'tunnel', '-R',
-                       '{}:localhost:{}'.format(rport, lport), '-p', ssh_port]
+                       '-p', ssh_port,
+                       ssh_server, '-l', 'tunnel']
+        if self.film_role == "jessica":
+            jessica_motw_port = "__{}_{}_{}".format(str(self.shared_secret),
+                                                    self.film_role,
+                                                    "get_jessica_motw_port")
+            self.session.register(lambda: self.jessica_motw_port,
+                                  "com.accorder.{}".format(jessica_motw_port))
+
+            ssh_options.append[ '-R',
+                                '{}:localhost:{}'.format(self.jessica_motw_port,
+                                                         jessica_rsync_port),
+                                'memoryoftheworld.org']
+        else:
+            logan_rsync_port = int(random.random()*48000+1024)
+            jessica_motw_port = self.session.call("__{}_{}_{}".format(str(self.shared_secret),
+                                                                      self.film_role,
+                                                                      "get_jessica_motw_port"))
+            ssh_options.append['-L', '{}:rsync.memoryoftheworld.org:{}'.format(jessica_motw_port,
+                                                                               logan_rsync_port),
+                               'memoryoftheworld.org']
+
         reactor.spawnProcess(self.ssh_tunnel, 'ssh', ssh_options, env=os.environ)
 
     def run_rsync(self):
-        self.local_cherrypy()
-        self.jessica_rsync_established.emit()
+        # self.local_cherrypy()
+        rsync_options = ['accorder_rsync'.encode('ascii'),
+                         '--daemon'.encode('ascii'),
+                         '--no-detach'.encode('ascii'),
+                         '--verbose'.encode('ascii'),
+                         '--port'.encode('ascii'),
+                         '10101'.encode('ascii'),
+                         '--config'.encode('ascii'),
+                         '/tmp/rsyncd.conf'.encode('ascii')]
+        reactor.spawnProcess(self.rsync, 'rsync', rsync_options)
 
     def get_session(self, query_key, query_value):
         '''returns list of sessions if query_value found in query_key '''

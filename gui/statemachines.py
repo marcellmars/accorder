@@ -87,8 +87,10 @@ class SshRsync(QObject):
 
         logan_session = QState(logan_jessica)
         init_logan = QState(logan_session)
-        ssh_logan = QState(logan_session)
-        rsync_logan = QState(logan_session)
+        ssh_init_logan = QState(logan_session)
+        ssh_running_logan = QState(logan_session)
+        rsync_init_logan = QState(logan_session)
+        rsync_running_logan = QState(logan_session)
 
         init_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "init_jessica"))
@@ -102,6 +104,7 @@ class SshRsync(QObject):
         ssh_running_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "ssh_running_jessica"))
         )
+        # ssh_running_jessica.entered.connect(self.pitcher.get_jessica_motw_port)
 
         rsync_init_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "rsync_init_jessica"))
@@ -116,9 +119,19 @@ class SshRsync(QObject):
         logan_session.setInitialState(init_logan)
 
         init_jessica.addTransition(self.pitcher.jessica_init_config, ssh_init_jessica)
-        ssh_init_jessica.addTransition(self.pitcher.ssh_tunnel.established, ssh_running_jessica)
+        ssh_init_jessica.addTransition(self.pitcher.ssh_tunnel.jessica_established,
+                                       ssh_running_jessica)
         ssh_running_jessica.addTransition(rsync_init_jessica)
-        rsync_init_jessica.addTransition(self.pitcher.rsync.established, rsync_running_jessica)
+        rsync_init_jessica.addTransition(self.pitcher.rsync.jessica_established,
+                                         rsync_running_jessica)
+
+        rsync_running_jessica.addTransition(init_logan)
+
+        init_logan.addTransition(self.pitcher.logan_init_config, ssh_init_logan)
+        ssh_init_logan.addTransition(self.pitcher.ssh.logan_established, ssh_running_logan)
+        ssh_running_logan.addTransition(rsync_init_logan)
+        rsync_init_logan.addTransition(self.pitcher.rsync.logan_established,
+                                       rsync_running_logan)
 
         self.fsm.setInitialState(logan_jessica)
         self.fsm.start()
