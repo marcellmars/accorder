@@ -128,7 +128,7 @@ class SshRsync(QObject):
         rsync_running_jessica.addTransition(init_logan)
 
         init_logan.addTransition(self.pitcher.logan_init_config, ssh_init_logan)
-        ssh_init_logan.addTransition(self.pitcher.ssh.logan_established, ssh_running_logan)
+        ssh_init_logan.addTransition(self.pitcher.ssh_tunnel.logan_established, ssh_running_logan)
         ssh_running_logan.addTransition(rsync_init_logan)
         rsync_init_logan.addTransition(self.pitcher.rsync.logan_established,
                                        rsync_running_logan)
