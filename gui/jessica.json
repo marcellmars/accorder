@@ -8,9 +8,9 @@
             "name": "jessica",
             "film_role": "jessica",
             "shared_secret": "208b8499057b43178e5099b62343fa94",
-            "ssh_port": "722",
+            "ssh_port": "443",
             "ssh_remote_port": "5688",
-            "ssh_server": "memoryoftheworld.org"
+            "ssh_server": "ssh.pede.rs"
         }
     }
 }

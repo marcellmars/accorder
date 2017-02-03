@@ -207,10 +207,10 @@ class AccorderGUI(QMainWindow):
 
         self.main_widget = QDialog()
         self.logan_menu = self.menuBar().addMenu("&Logan")
-        self.logan_menu.addAction("Add &new sesion").triggered.connect(self.add_new_logan)
+        self.logan_menu.addAction("Add &new sync").triggered.connect(self.add_new_logan)
         self.menuBar().addAction("&&").setEnabled(False)
         self.jessica_menu = self.menuBar().addMenu("&Jessica")
-        self.jessica_menu.addAction("Add &new sesion").triggered.connect(self.add_new_jessica)
+        self.jessica_menu.addAction("Add &new sync").triggered.connect(self.add_new_jessica)
 
         self.setCentralWidget(self.main_widget)
 
@@ -390,11 +390,10 @@ class AccorderGUI(QMainWindow):
         # logan: rsync -zvrith rsync://foo@localhost:10200/foo bar/
         ssh_server = self.acconf['ssh_server']
         # self.jessica_motw_port = self.acconf['ssh_remote_port']
-        #self.jessica_motw_port = int(random.random()*48000+1024)
-        self.jessica_motw_port = 10121
+        self.jessica_motw_port = int(random.random()*48000+1024)
         print("remote ssh port: {}".format(self.jessica_motw_port))
         # lport = self.acconf['cherrypy_port']
-        jessica_rsync_port = 10101
+        jessica_rsync_port = int(random.random()*48000+1024)
         ssh_port = self.acconf['ssh_port']
 
         ssh_options = ['ssh_accorder',
@@ -416,17 +415,16 @@ class AccorderGUI(QMainWindow):
 
             ssh_options.extend(['-R',
                                 '{!s}:localhost:{!s}'.format(self.jessica_motw_port,
-                                                             jessica_rsync_port),
-                                'memoryoftheworld.org'])
+                                                             jessica_rsync_port)])
         else:
             logan_rsync_port = int(random.random()*48000+1024)
             jessica_motw_port = self.session.call("__{}_{}_{}".format(str(self.shared_secret),
                                                                       self.film_role,
                                                                       "get_jessica_motw_port"))
             ssh_options.extend(['-L',
-                                '{!s}:rsync.memoryoftheworld.org:{!s}'.format(jessica_motw_port,
-                                                                              logan_rsync_port),
-                                'memoryoftheworld.org'])
+                                '{!s}:{}:{!s}'.format(jessica_motw_port,
+                                                      ssh_server,
+                                                      logan_rsync_port)])
 
         reactor.spawnProcess(self.ssh_tunnel, 'ssh', ssh_options, env=os.environ)
 
@@ -508,7 +506,8 @@ if __name__ == '__main__':
         from twisted.internet import reactor
 
         # pyqt gui stuff
-        accorder = AccorderGUI(url=u"ws://memoryoftheworld.org:8080/ws", realm="realm1", acconf=ACCONF)
+        # accorder = AccorderGUI(url=u"ws://memoryoftheworld.org:8080/ws", realm="realm1", acconf=ACCONF)
+        accorder = AccorderGUI(url=u"wss://wss.memoryoftheworld.org/ws", realm="realm1", acconf=ACCONF)
         snipdom = AccorderMainWindow(accorder)
         snipdom.vsplit.insertWidget(0, accorder)
         snipdom.show()
