@@ -7,12 +7,13 @@ from __future__ import (unicode_literals, division, absolute_import,
 import os
 import sys
 import json
-import uuid
 import signal
 import random
 from functools import wraps
+from base64 import encodebytes as b64e
+from base64 import decodebytes as b64d
 
-import pyaes
+from pyaes import AESModeOfOperationCTR as aes_ctr
 
 import cherrypy
 
@@ -28,7 +29,11 @@ from PyQt5.Qt import QPushButton
 from PyQt5.Qt import QHBoxLayout
 from PyQt5.Qt import QSizePolicy
 from PyQt5.Qt import QVBoxLayout
+from PyQt5.Qt import QSpacerItem
+from PyQt5.Qt import QLayout
 from PyQt5.Qt import QWidget
+from PyQt5.Qt import QStackedWidget
+from PyQt5.Qt import QFileDialog
 from PyQt5.Qt import QAction
 from PyQt5.Qt import pyqtSignal
 
@@ -152,6 +157,164 @@ class CrossClient(QObject, ApplicationSession):
         yield self.leftSession.emit(details)
 
 
+class JessicaInitDialog(QDialog):
+    def __init__(self, pitcher, parent=None):
+        QDialog.__init__(self)
+
+        self.pitcher = pitcher
+
+        self.vlayout = QVBoxLayout()
+        self.setLayout(self.vlayout)
+
+        # shared secret bar
+        self.ss_message_layout = QHBoxLayout()
+        self.ss_message_container = QWidget()
+        self.ss_message_container.setLayout(self.ss_message_layout)
+
+        self.ss_label = QLabel("Shared secret: ")
+
+        self.ss_message = QLineEdit(str(self.pitcher.shared_secret()))
+        self.ss_message.setObjectName("shared_secret")
+        self.ss_message.setSizePolicy(QSizePolicy.Expanding,
+                                      QSizePolicy.Expanding)
+        self.ss_message.setToolTip("change the shared secret")
+
+        self.ss_apply = QPushButton("Apply")
+        self.ss_apply.clicked.connect(
+            # lambda: self.pitcher.shared_secret(self.ss_message.text())
+            lambda: self.pitcher.shared_secret(self.ss_message.text())
+            )
+
+        self.ss_message_layout.addWidget(self.ss_label)
+        self.ss_message_layout.addWidget(self.ss_message)
+        self.ss_message_layout.addWidget(self.ss_apply)
+
+        # rsync dirpath bar
+        self.rsync_dirpath_layout = QHBoxLayout()
+        self.rsync_dirpath_container = QWidget()
+        self.rsync_dirpath_container.setLayout(self.rsync_dirpath_layout)
+
+        self.rsync_dirpath_label = QLabel("Rsync directory path:")
+
+        self.rsync_dirpath = QLineEdit("/tmp/foo")
+        self.rsync_dirpath.setObjectName("rsync_file_path")
+        self.rsync_dirpath.setSizePolicy(QSizePolicy.Expanding,
+                                      QSizePolicy.Expanding)
+        self.rsync_dirpath.setToolTip("change rsync directory path")
+
+        self.rsync_dirpath_button = QPushButton("Choose directory")
+        self.rsync_dirpath_button.clicked.connect(
+            lambda: self.rsync_dirpath.setText("{}{}".format(QFileDialog.getExistingDirectory(), os.path.sep))
+            )
+
+        self.rsync_dirpath_layout.addWidget(self.rsync_dirpath_label)
+        self.rsync_dirpath_layout.addWidget(self.rsync_dirpath)
+        self.rsync_dirpath_layout.addWidget(self.rsync_dirpath_button)
+
+        # vertical layout list of bars
+        self.vlayout.addWidget(self.ss_message_container)
+        self.vlayout.addWidget(self.rsync_dirpath_container)
+        self.vlayout.addStretch(1)
+
+
+class DebugInitDialog(QDialog):
+    def __init__(self, pitcher, parent=None):
+        QDialog.__init__(self)
+
+        self.pitcher = pitcher
+
+        self.vlayout = QVBoxLayout()
+        self.setLayout(self.vlayout)
+
+        self.ss_message_layout = QHBoxLayout()
+        self.ss_message_container = QWidget()
+        self.ss_message_container.setLayout(self.ss_message_layout)
+
+        self.ss_label = QLabel("Shared secret: ")
+
+        self.ss_message = QLineEdit(str(self.pitcher.shared_secret()))
+        self.ss_message.setObjectName("shared_secret")
+        self.ss_message.setSizePolicy(QSizePolicy.Expanding,
+                                      QSizePolicy.Expanding)
+        self.ss_message.setToolTip("change the shared secret")
+
+        self.ss_apply = QPushButton("Apply")
+        self.ss_apply.clicked.connect(
+            # lambda: self.pitcher.shared_secret(self.ss_message.text())
+            lambda: self.pitcher.shared_secret(self.ss_message.text())
+            )
+
+        self.ss_message_layout.addWidget(self.ss_label)
+        self.ss_message_layout.addWidget(self.ss_message)
+        self.ss_message_layout.addWidget(self.ss_apply)
+
+        self.pub_message_layout = QHBoxLayout()
+        self.pub_message_container = QWidget()
+        self.pub_message_container.setLayout(self.pub_message_layout)
+
+        self.publish_label = QLabel("Publish: ")
+
+        self.pub_message = QLineEdit("Lorem ipsum...")
+        self.pub_message.setObjectName("message")
+        self.pub_message.setSizePolicy(QSizePolicy.Expanding,
+                                       QSizePolicy.Expanding)
+        self.pub_message.setToolTip("Type your message here")
+
+        self.publish_channel = QLineEdit("com.accorder.default")
+        self.send_message = QPushButton("Publish")
+
+        self.send_message.clicked.connect(
+            lambda: self.pitcher.xb_publish(
+                    {'channel': self.publish_channel.text(),
+                     'message': self.pitcher.encrypt_message(
+                         json.dumps({'res': self.pub_message.text()})
+                     )}
+            )
+        )
+
+        self.pub_message_layout.addWidget(self.publish_label)
+        self.pub_message_layout.addWidget(self.publish_channel)
+        self.pub_message_layout.addWidget(self.pub_message)
+        self.pub_message_layout.addWidget(self.send_message)
+
+        self.sub_message_layout = QHBoxLayout()
+        self.sub_message_container = QWidget()
+        self.sub_message_container.setLayout(self.sub_message_layout)
+
+        self.subscribe_label = QLabel("Subscribe: ")
+
+        self.sub_callback = QLineEdit("on_message")
+        self.sub_callback.setObjectName("callback")
+        self.sub_callback.setSizePolicy(QSizePolicy.Expanding,
+                                        QSizePolicy.Expanding)
+
+        self.subscribe_channel = QLineEdit("com.accorder.default")
+        self.subscribe = QPushButton("Subscribe")
+
+        self.subscribe.clicked.connect(
+            lambda: self.pitcher.xb_subscribe(
+                    {'channel': self.subscribe_channel.text(),
+                     'callback': self.sub_callback.text()}
+            )
+        )
+
+        self.sub_message_layout.addWidget(self.subscribe_label)
+        self.sub_message_layout.addWidget(self.subscribe_channel)
+        self.sub_message_layout.addWidget(self.sub_callback)
+        self.sub_message_layout.addWidget(self.subscribe)
+
+        self.default_recv = QLabel("Default channel: ")
+        self.watch_state_machine = QLabel("State (machine): ")
+        self.watch_ssh_tunnel = QLabel("SSH Tunnel: ")
+
+        self.vlayout.addWidget(self.ss_message_container)
+        self.vlayout.addWidget(self.pub_message_container)
+        self.vlayout.addWidget(self.sub_message_container)
+        self.vlayout.addWidget(self.default_recv)
+        self.vlayout.addWidget(self.watch_state_machine)
+        self.vlayout.addWidget(self.watch_ssh_tunnel)
+
+
 class AccorderGUI(QMainWindow):
     # signals sent to statemachines.FooLoganChatAndRun
     init_chat = pyqtSignal()
@@ -184,10 +347,9 @@ class AccorderGUI(QMainWindow):
 
         # it picks up shared secret from json conf but it also
         # can be changed via gui in this testing phase
-        self.change_shared_secret(self.acconf['shared_secret'])
+        self.shared_secret(self.acconf['shared_secret'])
 
         self.session = None
-        self.subscriptions = {}
 
         def make(config):
             self.session = CrossClient(config)
@@ -203,108 +365,21 @@ class AccorderGUI(QMainWindow):
 
         self.rsync = Rsync(self.film_role)
         self.rsync.rsync_log.connect(self.log_message)
-        # main GUI bloat
 
-        self.main_widget = QDialog()
+        # main GUI bloat
+        print("SelfSession: {}".format(self.session))
+        self.stacked_widget = QStackedWidget()
+
+        self.debug_widget = DebugInitDialog(self)
         self.logan_menu = self.menuBar().addMenu("&Logan")
         self.logan_menu.addAction("Add &new sync").triggered.connect(self.add_new_logan)
         self.menuBar().addAction("&&").setEnabled(False)
         self.jessica_menu = self.menuBar().addMenu("&Jessica")
         self.jessica_menu.addAction("Add &new sync").triggered.connect(self.add_new_jessica)
 
-        self.setCentralWidget(self.main_widget)
-
-        self.vlayout = QVBoxLayout()
-        self.main_widget.setLayout(self.vlayout)
-
-        self.ss_message_layout = QHBoxLayout()
-        self.ss_message_container = QWidget()
-        self.ss_message_container.setLayout(self.ss_message_layout)
-
-        self.ss_label = QLabel("Shared secret: ")
-
-        self.ss_message = QLineEdit(str(self.shared_secret))
-        self.ss_message.setObjectName("shared_secret")
-        self.ss_message.setSizePolicy(QSizePolicy.Expanding,
-                                      QSizePolicy.Expanding)
-        self.ss_message.setToolTip("change the shared secret")
-
-        self.ss_apply = QPushButton("Apply")
-        self.ss_apply.clicked.connect(
-            lambda: self.change_shared_secret(
-                uuid.UUID(self.ss_message.text())
-            )
-        )
-
-        self.ss_message_layout.addWidget(self.ss_label)
-        self.ss_message_layout.addWidget(self.ss_message)
-        self.ss_message_layout.addWidget(self.ss_apply)
-
-        self.pub_message_layout = QHBoxLayout()
-        self.pub_message_container = QWidget()
-        self.pub_message_container.setLayout(self.pub_message_layout)
-
-        self.publish_label = QLabel("Publish: ")
-
-        self.pub_message = QLineEdit("Lorem ipsum...")
-        self.pub_message.setObjectName("message")
-        self.pub_message.setSizePolicy(QSizePolicy.Expanding,
-                                       QSizePolicy.Expanding)
-        self.pub_message.setToolTip("Type your message here")
-
-        self.publish_channel = QLineEdit("com.accorder.default")
-        self.send_message = QPushButton("Publish")
-
-        self.send_message.clicked.connect(
-            lambda: self.xb_publish(
-                    {'channel': self.publish_channel.text(),
-                     'message': self.encrypt_message(
-                         json.dumps({'res': self.pub_message.text()})
-                     )}
-            )
-        )
-
-        self.pub_message_layout.addWidget(self.publish_label)
-        self.pub_message_layout.addWidget(self.publish_channel)
-        self.pub_message_layout.addWidget(self.pub_message)
-        self.pub_message_layout.addWidget(self.send_message)
-
-        self.sub_message_layout = QHBoxLayout()
-        self.sub_message_container = QWidget()
-        self.sub_message_container.setLayout(self.sub_message_layout)
-
-        self.subscribe_label = QLabel("Subscribe: ")
-
-        self.sub_callback = QLineEdit("on_message")
-        self.sub_callback.setObjectName("callback")
-        self.sub_callback.setSizePolicy(QSizePolicy.Expanding,
-                                        QSizePolicy.Expanding)
-
-        self.subscribe_channel = QLineEdit("com.accorder.default")
-        self.subscribe = QPushButton("Subscribe")
-
-        self.subscribe.clicked.connect(
-            lambda: self.xb_subscribe(
-                    {'channel': self.subscribe_channel.text(),
-                     'callback': self.sub_callback.text()}
-            )
-        )
-
-        self.sub_message_layout.addWidget(self.subscribe_label)
-        self.sub_message_layout.addWidget(self.subscribe_channel)
-        self.sub_message_layout.addWidget(self.sub_callback)
-        self.sub_message_layout.addWidget(self.subscribe)
-
-        self.default_recv = QLabel("Default channel: ")
-        self.watch_state_machine = QLabel("State (machine): ")
-        self.watch_ssh_tunnel = QLabel("SSH Tunnel: ")
-
-        self.vlayout.addWidget(self.ss_message_container)
-        self.vlayout.addWidget(self.pub_message_container)
-        self.vlayout.addWidget(self.sub_message_container)
-        self.vlayout.addWidget(self.default_recv)
-        self.vlayout.addWidget(self.watch_state_machine)
-        self.vlayout.addWidget(self.watch_ssh_tunnel)
+        self.stacked_widget.addWidget(self.debug_widget)
+        self.stacked_widget.setCurrentWidget(self.debug_widget)
+        self.setCentralWidget(self.stacked_widget)
 
         # self.state_machine = FooLoganChatAndRun(self)
         self.state_machine = SshRsync(self)
@@ -332,51 +407,57 @@ class AccorderGUI(QMainWindow):
         print("send conf: {}".format(self.acconf))
 
     def on_join_session(self):
-        get_session_id = "__{}_{}_{}".format(str(self.shared_secret),
+        get_session_id = "__{}_{}_{}".format(str(self.shared_secret()),
                                              self.film_role,
                                              "get_session_id")
         self.session.register(lambda: self.session._session_id,
                               "com.accorder.{}".format(get_session_id))
-        print("session.id: {}".format(self.session._subscriptions))
 
     def on_leave_session(self):
         print('leave')
 
     def encrypt_message(self, msg):
-        return pyaes.AESModeOfOperationCTR(self.shared_secret.encode('utf8')).encrypt(msg)
+        # need to convert encrypted message into 'utf-8' because JSON serialization
+        # so instead of doing that straight from bytes to utf-8 there is a b64 step before
+        return b64e(aes_ctr(self.shared_secret().encode('utf8')).encrypt(msg)).decode('utf-8')
 
     def decrypt_message(self, msg):
-        return pyaes.AESModeOfOperationCTR(self.shared_secret.encode('utf8')).decrypt(msg)
+        # just symmetrical when the message comes back to be decrypted
+        return aes_ctr(self.shared_secret().encode('utf8')).decrypt(b64d(msg.encode('utf-8')))
 
-    def change_shared_secret(self, ss):
-        print('shared secret: {}'.format(ss))
-        self.shared_secret = ss
+    def shared_secret(self, ss=None):
+        if ss:
+            self.shar_sec = ss
+        return self.shar_sec
 
     def on_message(self, message):
         print("on_message: {}".format(message))
         message = self.decrypt_message(message)
         print("decrypted: {}".format(message))
         j = (json.loads(message.decode('utf-8')))
-        self.default_recv.setText("Default channel: {}".format(j['res']))
+        self.debug_widget.default_recv.setText("Default channel: {}".format(j['res']))
 
     def add_new_jessica(self):
+        self.jessica_init_widget = JessicaInitDialog(self)
+        self.stacked_widget.addWidget(self.jessica_init_widget)
+        self.stacked_widget.setCurrentWidget(self.jessica_init_widget)
         self.log_message("new jessica!")
-        self.jessica_init_config.emit()
+        # self.jessica_init_config.emit()
 
     def add_new_logan(self):
         self.log_message("new logan!")
 
     def log_message(self, msg="nothing passed..."):
         print("LOG MESSAGE: {}".format(msg))
-        self.watch_ssh_tunnel.setText("Log message: {}".format(msg))
+        self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(msg))
 
     def log_cherry(self, e):
         print("LOG MESSAGE: {}".format(str(e)))
-        self.watch_ssh_tunnel.setText("Log message: {}".format(str(e)))
+        self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(str(e)))
 
     def update_current_state(self, message):
         self.current_state = message
-        self.watch_state_machine.setText("FSM: {}".format(
+        self.debug_widget.watch_state_machine.setText("FSM: {}".format(
             self.current_state))
         print("update_current_state: {}".format(message))
 
@@ -407,7 +488,7 @@ class AccorderGUI(QMainWindow):
                        '-p', ssh_port,
                        ssh_server, '-l', 'tunnel']
         if self.film_role == "jessica":
-            jessica_motw_port = "__{}_{}_{}".format(str(self.shared_secret),
+            jessica_motw_port = "__{}_{}_{}".format(str(self.shared_secret()),
                                                     self.film_role,
                                                     "get_jessica_motw_port")
             self.session.register(lambda: self.jessica_motw_port,
@@ -418,7 +499,7 @@ class AccorderGUI(QMainWindow):
                                                              jessica_rsync_port)])
         else:
             logan_rsync_port = int(random.random()*48000+1024)
-            jessica_motw_port = self.session.call("__{}_{}_{}".format(str(self.shared_secret),
+            jessica_motw_port = self.session.call("__{}_{}_{}".format(str(self.shared_secret()),
                                                                       self.film_role,
                                                                       "get_jessica_motw_port"))
             ssh_options.extend(['-L',
@@ -454,7 +535,7 @@ class AccorderGUI(QMainWindow):
                       'tools.staticdir.index': self.acconf['http_shared_index']}}
 
         wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
-        cherrypy.tools.session_auth = cherrypy.Tool('before_handler', shared_secret)
+        cherrypy.tools.session_auth = cherrypy.Tool('before_handler', cherrypy_shared_secret)
         cherrypy.config.update({'engine.autoreload.on': False})
         cherrypy.server.unsubscribe()
         self.cherry_loop = task.LoopingCall(lambda: cherrypy.engine.publish('main'))
@@ -472,7 +553,7 @@ class AccorderGUI(QMainWindow):
         self.cherry_connection = reactor.listenTCP(self.acconf['cherrypy_port'], site)
 
 
-def shared_secret(*args, **kwargs):
+def cherrypy_shared_secret(*args, **kwargs):
     if cherrypy.request.params.get(ACCONFS['shared_secret']):
         cherrypy.session[ACCONFS['shared_secret']] = True
         raise cherrypy.HTTPRedirect("/")
