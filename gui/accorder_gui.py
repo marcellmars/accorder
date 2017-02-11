@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-from __future__ import (unicode_literals, division, absolute_import,
-                        print_function)
-
 import os
 import sys
 import json
@@ -29,12 +26,9 @@ from PyQt5.Qt import QPushButton
 from PyQt5.Qt import QHBoxLayout
 from PyQt5.Qt import QSizePolicy
 from PyQt5.Qt import QVBoxLayout
-from PyQt5.Qt import QSpacerItem
-from PyQt5.Qt import QLayout
 from PyQt5.Qt import QWidget
 from PyQt5.Qt import QStackedWidget
 from PyQt5.Qt import QFileDialog
-from PyQt5.Qt import QAction
 from PyQt5.Qt import pyqtSignal
 
 from autobahn.twisted.wamp import ApplicationSession
@@ -44,7 +38,6 @@ from autobahn.wamp.types import CloseDetails
 
 from twisted.internet.defer import inlineCallbacks
 from twisted.internet import task
-from twisted.internet import utils
 from twisted.web.wsgi import WSGIResource
 from twisted.web import server
 
@@ -54,6 +47,7 @@ import qt5reactor
 from statemachines import SshRsync
 from externalprocesses import SSHTunnel
 from externalprocesses import Rsync
+import shuffled_words 
 
 
 DTAP_STAGE = 'development'
@@ -166,23 +160,49 @@ class JessicaInitDialog(QDialog):
         self.vlayout = QVBoxLayout()
         self.setLayout(self.vlayout)
 
+        # session name
+        self.session_name_layout = QHBoxLayout()
+        self.session_name_container = QWidget()
+        self.session_name_container.setLayout(self.session_name_layout)
+
+        self.session_name_label = QLabel("Session name: ")
+
+        shuffled_name = "Jessica {} {} {}".format(random.choice(shuffled_words.verbs),
+                                                  random.choice(shuffled_words.adjectives),
+                                                  random.choice(shuffled_words.nouns))
+        self.session_name = QLineEdit(shuffled_name)
+        self.session_name.setObjectName("session_name")
+        self.session_name.setSizePolicy(QSizePolicy.Expanding,
+                                        QSizePolicy.Expanding)
+        self.session_name.setToolTip("change the session name")
+
+        # self.session_name_apply = QPushButton("Apply")
+        # self.session_name_apply.clicked.connect(
+        #     # lambda: self.pitcher.shared_secret(self.session_name.text())
+        #     lambda: self.pitcher.shared_secret(self.session_name.text())
+        #     )
+
+        self.session_name_layout.addWidget(self.session_name_label)
+        self.session_name_layout.addWidget(self.session_name)
+        # self.session_name_layout.addWidget(self.session_name_apply)
+
         # shared secret bar
         self.ss_message_layout = QHBoxLayout()
         self.ss_message_container = QWidget()
         self.ss_message_container.setLayout(self.ss_message_layout)
 
-        self.ss_label = QLabel("Shared secret: ")
+        self.ss_label = QLabel("Session secret: ")
 
-        self.ss_message = QLineEdit(str(self.pitcher.shared_secret()))
-        self.ss_message.setObjectName("shared_secret")
+        self.ss_message = QLabel(str(self.pitcher.shared_secret()))
+        self.ss_message.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.ss_message.setObjectName("session_secret")
         self.ss_message.setSizePolicy(QSizePolicy.Expanding,
                                       QSizePolicy.Expanding)
-        self.ss_message.setToolTip("change the shared secret")
 
-        self.ss_apply = QPushButton("Apply")
+        self.ss_apply = QPushButton("Copy secret for Logan")
         self.ss_apply.clicked.connect(
             # lambda: self.pitcher.shared_secret(self.ss_message.text())
-            lambda: self.pitcher.shared_secret(self.ss_message.text())
+            lambda: app.clipboard().setText(self.ss_message.text())
             )
 
         self.ss_message_layout.addWidget(self.ss_label)
@@ -194,15 +214,15 @@ class JessicaInitDialog(QDialog):
         self.rsync_dirpath_container = QWidget()
         self.rsync_dirpath_container.setLayout(self.rsync_dirpath_layout)
 
-        self.rsync_dirpath_label = QLabel("Rsync directory path:")
+        self.rsync_dirpath_label = QLabel("Shared directory:")
 
-        self.rsync_dirpath = QLineEdit("/tmp/foo")
+        self.rsync_dirpath = QLineEdit("")
         self.rsync_dirpath.setObjectName("rsync_file_path")
         self.rsync_dirpath.setSizePolicy(QSizePolicy.Expanding,
-                                      QSizePolicy.Expanding)
-        self.rsync_dirpath.setToolTip("change rsync directory path")
+                                         QSizePolicy.Expanding)
+        self.rsync_dirpath.setToolTip("choose shared directory path")
 
-        self.rsync_dirpath_button = QPushButton("Choose directory")
+        self.rsync_dirpath_button = QPushButton("...")
         self.rsync_dirpath_button.clicked.connect(
             lambda: self.rsync_dirpath.setText("{}{}".format(QFileDialog.getExistingDirectory(), os.path.sep))
             )
@@ -212,8 +232,9 @@ class JessicaInitDialog(QDialog):
         self.rsync_dirpath_layout.addWidget(self.rsync_dirpath_button)
 
         # vertical layout list of bars
-        self.vlayout.addWidget(self.ss_message_container)
+        self.vlayout.addWidget(self.session_name_container)
         self.vlayout.addWidget(self.rsync_dirpath_container)
+        self.vlayout.addWidget(self.ss_message_container)
         self.vlayout.addStretch(1)
 
 
