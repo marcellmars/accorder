@@ -1,25 +1,20 @@
 {
-    "local_key": "208b8499057b43178e5099b62343fa",
-    "sessions": {
+    "ssh":{
+        "port": "443",
+        "server": "ssh.pede.rs"
+    },
+    "jessica": {
         "311b550b03c44fae961de22337c64476": {
-            "cherrypy_port": 9989,
-            "http_shared_dir": "/home/m/CalibreLibraries/FooBar",
-            "http_shared_index": "BROWSE_LIBRARY.html",
-            "name": "some name",
-            "shared_secret": "208b8499057b43178e5099b62343fa94",
-            "ssh_port": "722",
-            "ssh_remote_port": "5688",
-            "ssh_server": "memoryoftheworld.org"
-        },
-        "6c17388ac3ea4379859d6230ce8f4202": {
-            "cherrypy_port": 9989,
-            "http_shared_dir": "/home/m/CalibreLibraries/FooBar",
-            "http_shared_index": "BROWSE_LIBRARY.html",
-            "name": "another name",
-            "shared_secret": "55191b77659d483bb8b6df7e5267443d",
-            "ssh_port": "722",
-            "ssh_remote_port": "5688",
-            "ssh_server": "memoryoftheworld.org"
+            "name": "Jessica looks shy shoe",
+            "film_role": "jessica",
+            "shared_secret": "208b8499057b43178e5099b62343fa94"
+        }
+    },
+    "logan": {
+        "507adeb120bf4e849e8ef43f89a23159": {
+            "name": "Logan transfers high-pitched magic",
+            "film_role": "logan",
+            "shared_secret": "e4a98ff235474d1c8329fb3019842ace"
         }
     }
 }

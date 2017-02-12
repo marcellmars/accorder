@@ -1,3 +1,6 @@
+import random
+import os
+
 from PyQt5.Qt import QObject
 from PyQt5.Qt import pyqtSignal
 
@@ -12,9 +15,10 @@ class SSHTunnel(QObject, ProcessProtocol):
     jessica_ended = pyqtSignal()
     logan_ended = pyqtSignal()
 
-    def __init__(self, film_role):
+    def __init__(self, film_role, session):
         QObject.__init__(self)
         self.film_role = film_role
+        self.session = session
 
     def childDataReceived(self, cfd, data):
         print(u"{}: {}".format(cfd, data.decode()))
@@ -35,6 +39,54 @@ class SSHTunnel(QObject, ProcessProtocol):
         else:
             self.logan_ended.emit()
         print(u"{}'s tunnel ended: {}".format(self.film_role, reason))
+
+    def run_tunnel(self, conf, reactor):
+        # jessica: ssh -N ssh.pede.rs -l tunnel -R 10000:localhost:10101 -p 443
+        # jessica: run rsync on port 10101
+        # logan: ssh -N ssh.pede.rs -L 10200:ssh.pede.rs:10000 -l tunnel -p 443
+        # logan: rsync -zvrith rsync://foo@localhost:10200/foo bar/
+        ssh_server = conf['ssh']['server']
+        # self.jessica_motw_port = self.acconf['ssh_remote_port']
+        jessica_motw_port = conf['jessica_motw_port']
+        # conf['jessica_motw_port'] = int(random.random()*48000+1024)
+        print("remote ssh port: {}".format(self.jessica_motw_port))
+        # lport = self.acconf['cherrypy_port']
+        jessica_rsync_port = int(random.random()*48000+1024)
+        ssh_port = self.acconf['ssh_port']
+
+        ssh_options = ['ssh_accorder',
+                       '-T', '-N', '-g', '-C',
+                       '-c', 'arcfour,aes128-cbc,blowfish-cbc',
+                       '-o', 'TCPKeepAlive=yes',
+                       '-o', 'UserKnownHostsFile=/dev/null',
+                       '-o', 'StrictHostKeyChecking=no',
+                       '-o', 'ServerAliveINterval=60',
+                       '-o', 'ExitOnForwardFailure=yes',
+                       '-p', ssh_port,
+                       ssh_server, '-l', 'tunnel']
+        if self.film_role == "jessica":
+            jessica_motw_port = "__{}_{}_{}".format(str(self.shared_secret()),
+                                                    self.film_role,
+                                                    "get_jessica_motw_port")
+            self.session.register(lambda: self.jessica_motw_port,
+                                  "com.accorder.{}".format(jessica_motw_port))
+
+            ssh_options.extend(['-R',
+                                '{!s}:localhost:{!s}'.format(self.jessica_motw_port,
+                                                             jessica_rsync_port)])
+        else:
+            logan_rsync_port = int(random.random()*48000+1024)
+            jessica_motw_port = self.session.call("__{}_{}_{}".format(str(self.shared_secret()),
+                                                                      self.film_role,
+                                                                      "get_jessica_motw_port"))
+            ssh_options.extend(['-L',
+                                '{!s}:{}:{!s}'.format(jessica_motw_port,
+                                                      ssh_server,
+                                                      logan_rsync_port)])
+
+        reactor.spawnProcess(self, 'ssh', ssh_options, env=os.environ)
+
+
 
     def kill_tunnel(self):
         try:
@@ -78,6 +130,19 @@ class Rsync(QObject, ProcessProtocol):
         else:
             self.logan_ended.emit()
         print(u"Rsync ended: {}".format(reason))
+
+    def run_rsync(self, conf, reactor):
+        # self.local_cherrypy()
+        rsync_options = ['accorder_rsync',
+                         '--daemon',
+                         '--no-detach',
+                         '--verbose',
+                         '--port',
+                         conf['rsync']['port'],
+                         '--config',
+                         conf['rsync']['directory_path']]
+        reactor.spawnProcess(self, 'rsync', rsync_options)
+
 
     def kill_rsync(self):
         try:

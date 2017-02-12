@@ -6,6 +6,7 @@ import sys
 import json
 import signal
 import random
+import uuid
 from functools import wraps
 from base64 import encodebytes as b64e
 from base64 import decodebytes as b64d
@@ -47,7 +48,7 @@ import qt5reactor
 from statemachines import SshRsync
 from externalprocesses import SSHTunnel
 from externalprocesses import Rsync
-import shuffled_words 
+import shuffled_words
 
 
 DTAP_STAGE = 'development'
@@ -121,7 +122,7 @@ class AccorderMainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         print("close event!")
-        self.accorder.ssh_tunnel.kill_tunnel()
+        # self.accorder.ssh_tunnel.kill_tunnel()
         self.accorder.rsync.kill_rsync()
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
@@ -151,40 +152,42 @@ class CrossClient(QObject, ApplicationSession):
         yield self.leftSession.emit(details)
 
 
-class JessicaInitDialog(QDialog):
-    def __init__(self, pitcher, parent=None):
+class JessicaWidget(QDialog):
+    jessica_init_config = pyqtSignal()
+
+    def __init__(self, pitcher, new=False, parent=None):
         QDialog.__init__(self)
 
         self.pitcher = pitcher
+        if new:
+            new_session = uuid.uuid4().hex
+            self.pitcher.acconf['jessica'][new_session] = {}
+            conf = self.pitcher.acconf['jessica'][new_session]
+            conf['film_role'] = "jessica"
 
         self.vlayout = QVBoxLayout()
         self.setLayout(self.vlayout)
 
         # session name
-        self.session_name_layout = QHBoxLayout()
-        self.session_name_container = QWidget()
-        self.session_name_container.setLayout(self.session_name_layout)
+        self.ss_session_name_layout = QHBoxLayout()
+        self.ss_session_name_container = QWidget()
+        self.ss_session_name_container.setLayout(self.ss_session_name_layout)
 
-        self.session_name_label = QLabel("Session name: ")
+        self.ss_session_name_label = QLabel("Session name: ")
 
         shuffled_name = "Jessica {} {} {}".format(random.choice(shuffled_words.verbs),
                                                   random.choice(shuffled_words.adjectives),
                                                   random.choice(shuffled_words.nouns))
-        self.session_name = QLineEdit(shuffled_name)
-        self.session_name.setObjectName("session_name")
-        self.session_name.setSizePolicy(QSizePolicy.Expanding,
+        conf['name'] = shuffled_name
+
+        self.ss_session_name = QLineEdit(conf['name'])
+        self.ss_session_name.setObjectName("session_name")
+        self.ss_session_name.setSizePolicy(QSizePolicy.Expanding,
                                         QSizePolicy.Expanding)
-        self.session_name.setToolTip("change the session name")
+        self.ss_session_name.setToolTip("change the session name")
 
-        # self.session_name_apply = QPushButton("Apply")
-        # self.session_name_apply.clicked.connect(
-        #     # lambda: self.pitcher.shared_secret(self.session_name.text())
-        #     lambda: self.pitcher.shared_secret(self.session_name.text())
-        #     )
-
-        self.session_name_layout.addWidget(self.session_name_label)
-        self.session_name_layout.addWidget(self.session_name)
-        # self.session_name_layout.addWidget(self.session_name_apply)
+        self.ss_session_name_layout.addWidget(self.ss_session_name_label)
+        self.ss_session_name_layout.addWidget(self.ss_session_name)
 
         # shared secret bar
         self.ss_message_layout = QHBoxLayout()
@@ -193,7 +196,9 @@ class JessicaInitDialog(QDialog):
 
         self.ss_label = QLabel("Session secret: ")
 
-        self.ss_message = QLabel(str(self.pitcher.shared_secret()))
+        conf['shared_secret'] = str(self.pitcher.shared_secret(uuid.uuid4().hex))
+
+        self.ss_message = QLabel(conf['shared_secret'])
         self.ss_message.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.ss_message.setObjectName("session_secret")
         self.ss_message.setSizePolicy(QSizePolicy.Expanding,
@@ -214,13 +219,13 @@ class JessicaInitDialog(QDialog):
         self.rsync_dirpath_container = QWidget()
         self.rsync_dirpath_container.setLayout(self.rsync_dirpath_layout)
 
-        self.rsync_dirpath_label = QLabel("Shared directory:")
+        self.rsync_dirpath_label = QLabel("Directory path:")
 
         self.rsync_dirpath = QLineEdit("")
-        self.rsync_dirpath.setObjectName("rsync_file_path")
+        self.rsync_dirpath.setObjectName("rsync_directory_path")
         self.rsync_dirpath.setSizePolicy(QSizePolicy.Expanding,
                                          QSizePolicy.Expanding)
-        self.rsync_dirpath.setToolTip("choose shared directory path")
+        self.rsync_dirpath.setToolTip("choose directory to be synced")
 
         self.rsync_dirpath_button = QPushButton("...")
         self.rsync_dirpath_button.clicked.connect(
@@ -231,11 +236,41 @@ class JessicaInitDialog(QDialog):
         self.rsync_dirpath_layout.addWidget(self.rsync_dirpath)
         self.rsync_dirpath_layout.addWidget(self.rsync_dirpath_button)
 
+        # start session and save the configuration
+
+        self.start_button = QPushButton("Save config")
+        self.start_button.clicked.connect(
+            lambda: self.save_config(conf)
+        )
+
         # vertical layout list of bars
-        self.vlayout.addWidget(self.session_name_container)
+        self.vlayout.addWidget(self.ss_session_name_container)
         self.vlayout.addWidget(self.rsync_dirpath_container)
         self.vlayout.addWidget(self.ss_message_container)
+        self.vlayout.addWidget(self.start_button)
         self.vlayout.addStretch(1)
+
+    def save_config(self, conf):
+        conf['rsync'] = {}
+        conf['rsync']['port'] = int(random.random()*48000+1024)
+        conf['rsync']['directory_path'] = self.rsync_dirpath.text()
+
+        conf['cherrypy'] = {}
+        conf['cherrypy']['port'] = int(random.random()*48000+1024)
+        conf['cherrypy']['directory_path'] = self.rsync_dirpath.text()
+        conf['cherrypy']['calibre_index'] = "BROWSE_LIBRARY.html"
+
+        self.ssh_tunnel = SSHTunnel(conf['film_role'], self.pitcher.xb_session)
+        self.ssh_tunnel.ssh_log.connect(self.pitcher.log_message)
+
+        self.rsync = Rsync(conf['film_role'])
+        self.rsync.rsync_log.connect(self.pitcher.log_message)
+
+        self.state_machine = SshRsync(self)
+
+        print(json.dumps(self.pitcher.acconf,
+                         indent=4,
+                         sort_keys=True))
 
 
 class DebugInitDialog(QDialog):
@@ -350,7 +385,6 @@ class AccorderGUI(QMainWindow):
     cherry_error = pyqtSignal(object)
 
     # signals sent to statemachines.SshRsync
-    jessica_init_config = pyqtSignal()
     logan_init_config = pyqtSignal()
     logan_ssh_established = pyqtSignal()
     logan_rsync = pyqtSignal()
@@ -361,34 +395,21 @@ class AccorderGUI(QMainWindow):
         self.url = url
         self.realm = realm
 
-        # to be developed further into session dispatcher
-        # for now it should just pick up the first session from json conf
-        self.acconf = [ts for ts in acconf['sessions'].values()][0]
-        self.film_role = self.acconf['film_role']
-
-        # it picks up shared secret from json conf but it also
-        # can be changed via gui in this testing phase
-        self.shared_secret(self.acconf['shared_secret'])
-
-        self.session = None
+        self.acconf = acconf
+        self.xb_session = None
 
         def make(config):
-            self.session = CrossClient(config)
-            self.session.joinedSession.connect(self.on_join_session)
-            self.session.leftSession.connect(self.on_leave_session)
-            return self.session
+            self.xb_session = CrossClient(config)
+            self.xb_session.joinedSession.connect(self.on_join_session)
+            self.xb_session.leftSession.connect(self.on_leave_session)
+            return self.xb_session
 
         runner = ApplicationRunner(self.url, self.realm)
         runner.run(make, start_reactor=False)
 
-        self.ssh_tunnel = SSHTunnel(self.film_role)
-        self.ssh_tunnel.ssh_log.connect(self.log_message)
-
-        self.rsync = Rsync(self.film_role)
-        self.rsync.rsync_log.connect(self.log_message)
-
+        # self.ssh_tunnel = SSHTunnel(self.film_role)
         # main GUI bloat
-        print("SelfSession: {}".format(self.session))
+        print("SelfSession: {}".format(self.xb_session))
         self.stacked_widget = QStackedWidget()
 
         self.debug_widget = DebugInitDialog(self)
@@ -403,35 +424,28 @@ class AccorderGUI(QMainWindow):
         self.setCentralWidget(self.stacked_widget)
 
         # self.state_machine = FooLoganChatAndRun(self)
-        self.state_machine = SshRsync(self)
+        # self.state_machine = SshRsync(self)
 
     @inlineCallbacks
     def xb_publish(self, c_m):
         print("publish: {}".format(c_m))
-        yield self.session.publish(c_m['channel'], c_m['message'])
+        yield self.xb_session.publish(c_m['channel'], c_m['message'])
 
     @inlineCallbacks
     def xb_subscribe(self, c_m):
         print("subscribe: {}".format(c_m))
         # eval only for testing!!!
-        yield self.session.subscribe(eval("self.{}".format(c_m['callback'])),
+        yield self.xb_session.subscribe(eval("self.{}".format(c_m['callback'])),
                                      c_m['channel'])
-        for s in self.session._subscriptions:
+        for s in self.xb_session._subscriptions:
             print("subscriptions: {}".format(s))
 
-    @inlineCallbacks
-    def xb_fetch_conf(self, acconf):
-        print("subscribe: {}".format(acconf))
-
-    @inlineCallbacks
-    def xb_send_conf(self):
-        print("send conf: {}".format(self.acconf))
-
     def on_join_session(self):
+        self.film_role = "jessica"
         get_session_id = "__{}_{}_{}".format(str(self.shared_secret()),
                                              self.film_role,
                                              "get_session_id")
-        self.session.register(lambda: self.session._session_id,
+        self.xb_session.register(lambda: self.xb_session._session_id,
                               "com.accorder.{}".format(get_session_id))
 
     def on_leave_session(self):
@@ -447,6 +461,7 @@ class AccorderGUI(QMainWindow):
         return aes_ctr(self.shared_secret().encode('utf8')).decrypt(b64d(msg.encode('utf-8')))
 
     def shared_secret(self, ss=None):
+        self.shar_sec = "init"
         if ss:
             self.shar_sec = ss
         return self.shar_sec
@@ -459,7 +474,7 @@ class AccorderGUI(QMainWindow):
         self.debug_widget.default_recv.setText("Default channel: {}".format(j['res']))
 
     def add_new_jessica(self):
-        self.jessica_init_widget = JessicaInitDialog(self)
+        self.jessica_init_widget = JessicaWidget(self, new=True)
         self.stacked_widget.addWidget(self.jessica_init_widget)
         self.stacked_widget.setCurrentWidget(self.jessica_init_widget)
         self.log_message("new jessica!")
@@ -484,68 +499,6 @@ class AccorderGUI(QMainWindow):
 
     def get_jessica_motw_port(self):
         return self.jessica_motw_port
-
-    def run_tunnel(self):
-        # jessica: ssh -N ssh.pede.rs -l tunnel -R 10000:localhost:10101 -p 443
-        # jessica: run rsync on port 10101
-        # logan: ssh -N ssh.pede.rs -L 10200:ssh.pede.rs:10000 -l tunnel -p 443
-        # logan: rsync -zvrith rsync://foo@localhost:10200/foo bar/
-        ssh_server = self.acconf['ssh_server']
-        # self.jessica_motw_port = self.acconf['ssh_remote_port']
-        self.jessica_motw_port = int(random.random()*48000+1024)
-        print("remote ssh port: {}".format(self.jessica_motw_port))
-        # lport = self.acconf['cherrypy_port']
-        jessica_rsync_port = int(random.random()*48000+1024)
-        ssh_port = self.acconf['ssh_port']
-
-        ssh_options = ['ssh_accorder',
-                       '-T', '-N', '-g', '-C',
-                       '-c', 'arcfour,aes128-cbc,blowfish-cbc',
-                       '-o', 'TCPKeepAlive=yes',
-                       '-o', 'UserKnownHostsFile=/dev/null',
-                       '-o', 'StrictHostKeyChecking=no',
-                       '-o', 'ServerAliveINterval=60',
-                       '-o', 'ExitOnForwardFailure=yes',
-                       '-p', ssh_port,
-                       ssh_server, '-l', 'tunnel']
-        if self.film_role == "jessica":
-            jessica_motw_port = "__{}_{}_{}".format(str(self.shared_secret()),
-                                                    self.film_role,
-                                                    "get_jessica_motw_port")
-            self.session.register(lambda: self.jessica_motw_port,
-                                  "com.accorder.{}".format(jessica_motw_port))
-
-            ssh_options.extend(['-R',
-                                '{!s}:localhost:{!s}'.format(self.jessica_motw_port,
-                                                             jessica_rsync_port)])
-        else:
-            logan_rsync_port = int(random.random()*48000+1024)
-            jessica_motw_port = self.session.call("__{}_{}_{}".format(str(self.shared_secret()),
-                                                                      self.film_role,
-                                                                      "get_jessica_motw_port"))
-            ssh_options.extend(['-L',
-                                '{!s}:{}:{!s}'.format(jessica_motw_port,
-                                                      ssh_server,
-                                                      logan_rsync_port)])
-
-        reactor.spawnProcess(self.ssh_tunnel, 'ssh', ssh_options, env=os.environ)
-
-    def run_rsync(self):
-        # self.local_cherrypy()
-        rsync_options = ['accorder_rsync'.encode('ascii'),
-                         '--daemon'.encode('ascii'),
-                         '--no-detach'.encode('ascii'),
-                         '--verbose'.encode('ascii'),
-                         '--port'.encode('ascii'),
-                         '10101'.encode('ascii'),
-                         '--config'.encode('ascii'),
-                         '/tmp/rsyncd.conf'.encode('ascii')]
-        reactor.spawnProcess(self.rsync, 'rsync', rsync_options)
-
-    def get_session(self, query_key, query_value):
-        '''returns list of sessions if query_value found in query_key '''
-        return [(k, v) for (k, v) in self.acconf.items()
-                if query_key in v and v[query_key == query_value]]
 
     def local_cherrypy(self):
         # adding cherrypy into reactor loop
@@ -575,12 +528,13 @@ class AccorderGUI(QMainWindow):
 
 
 def cherrypy_shared_secret(*args, **kwargs):
-    if cherrypy.request.params.get(ACCONFS['shared_secret']):
-        cherrypy.session[ACCONFS['shared_secret']] = True
-        raise cherrypy.HTTPRedirect("/")
+    pass
+    # if cherrypy.request.params.get(ACCONFS['shared_secret']):
+    #     cherrypy.session[ACCONFS['shared_secret']] = True
+    #     raise cherrypy.HTTPRedirect("/")
 
-    if not cherrypy.session.get(ACCONFS['shared_secret']):
-        raise cherrypy.HTTPError("403 Forbidden")
+    # if not cherrypy.session.get(ACCONFS['shared_secret']):
+    #     raise cherrypy.HTTPError("403 Forbidden")
 
 
 class Root(object):
@@ -593,10 +547,8 @@ if __name__ == '__main__':
     if len(sys.argv) >= 1:
         if len(sys.argv) == 2:
             ACCONF = json.load(open(sys.argv[1]))
-            ACCONFS = [ts for ts in ACCONF['sessions'].values()][0]
         else:
             ACCONF = json.load(open("accorder.json"))
-            ACCONFS = [ts for ts in ACCONF['sessions'].values()][0]
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 

@@ -73,7 +73,7 @@ class SshRsync(QObject):
 
     def update_current_state(self, s_m):
         self.current_state[s_m[0]] = s_m[1]
-        self.pitcher.update_current_state(str(self.current_state))
+        self.pitcher.pitcher.update_current_state(str(self.current_state))
 
     def create_state(self):
         logan_jessica = QState(QState.ParallelStates, self.fsm)
@@ -99,7 +99,7 @@ class SshRsync(QObject):
         ssh_init_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "ssh_init_jessica"))
         )
-        ssh_init_jessica.entered.connect(self.pitcher.run_tunnel)
+        # ssh_init_jessica.entered.connect(self.pitcher.ssh_tunnel.run_tunnel)
 
         ssh_running_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "ssh_running_jessica"))
@@ -109,7 +109,7 @@ class SshRsync(QObject):
         rsync_init_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "rsync_init_jessica"))
         )
-        rsync_init_jessica.entered.connect(self.pitcher.run_rsync)
+        # rsync_init_jessica.entered.connect(self.pitcher.rsync.run_rsync)
 
         rsync_running_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "rsync_running_jessica"))
@@ -125,13 +125,13 @@ class SshRsync(QObject):
         rsync_init_jessica.addTransition(self.pitcher.rsync.jessica_established,
                                          rsync_running_jessica)
 
-        rsync_running_jessica.addTransition(init_logan)
+        # rsync_running_jessica.addTransition(init_logan)
 
-        init_logan.addTransition(self.pitcher.logan_init_config, ssh_init_logan)
-        ssh_init_logan.addTransition(self.pitcher.ssh_tunnel.logan_established, ssh_running_logan)
-        ssh_running_logan.addTransition(rsync_init_logan)
-        rsync_init_logan.addTransition(self.pitcher.rsync.logan_established,
-                                       rsync_running_logan)
+        # init_logan.addTransition(self.pitcher.logan_init_config, ssh_init_logan)
+        # ssh_init_logan.addTransition(self.pitcher.ssh_tunnel.logan_established, ssh_running_logan)
+        # ssh_running_logan.addTransition(rsync_init_logan)
+        # rsync_init_logan.addTransition(self.pitcher.rsync.logan_established,
+        #                                rsync_running_logan)
 
         self.fsm.setInitialState(logan_jessica)
         self.fsm.start()
