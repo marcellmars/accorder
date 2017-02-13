@@ -50,7 +50,7 @@ class SSHTunnel(QObject, ProcessProtocol):
         # logan: rsync -zvrith rsync://foo@localhost:10200/foo bar/
         ssh_server = conf['ssh']['server']
         # self.jessica_motw_port = self.acconf['ssh_remote_port']
-        jessica_motw_port = conf['jessica_motw_port']
+        jessica_motw_port = conf['jessica']['session']['ssh']['remote_port']
         # conf['jessica_motw_port'] = int(random.random()*48000+1024)
         log.info("remote ssh port: {}".format(self.jessica_motw_port))
         # lport = self.acconf['cherrypy_port']

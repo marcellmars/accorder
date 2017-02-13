@@ -231,20 +231,22 @@ class AccorderGUI(QMainWindow):
     def on_leave_session(self):
         log.info('leave')
 
-    def encrypt_message(self, msg):
+    def encrypt_message(self, msg, shared_secret):
         # need to convert encrypted message into 'utf-8' because JSON serialization
         # so instead of doing that straight from bytes to utf-8 there is a b64 step before
-        return b64e(aes_ctr(self.shared_secret().encode('utf8')).encrypt(msg)).decode('utf-8')
+        # return b64e(aes_ctr(self.shared_secret().encode('utf8')).encrypt(msg)).decode('utf-8')
+        return b64e(aes_ctr(shared_secret).encrypt(msg)).decode('utf-8')
 
-    def decrypt_message(self, msg):
+    def decrypt_message(self, msg, shared_secret):
         # just symmetrical when the message comes back to be decrypted
-        return aes_ctr(self.shared_secret().encode('utf8')).decrypt(b64d(msg.encode('utf-8')))
+        # return aes_ctr(self.shared_secret().encode('utf8')).decrypt(b64d(msg.encode('utf-8')))
+        return aes_ctr(shared_secret).decrypt(b64d(msg.encode('utf-8')))
 
-    def shared_secret(self, ss=None):
-        self.shar_sec = "init"
-        if ss:
-            self.shar_sec = ss
-        return self.shar_sec
+    # def shared_secret(self, ss=None):
+    #     self.shar_sec = "init"
+    #     if ss:
+    #         self.shar_sec = ss
+    #     return self.shar_sec
 
     def on_message(self, message):
         log.info("on_message: {}".format(message))
@@ -254,14 +256,14 @@ class AccorderGUI(QMainWindow):
         self.debug_widget.default_recv.setText("Default channel: {}".format(j['res']))
 
     def add_new_jessica(self):
-        self.jessica_init_widget = JessicaWidget(self, app, new=True)
+        self.jessica_init_widget = JessicaWidget(self, app)
         self.stacked_widget.addWidget(self.jessica_init_widget)
         self.stacked_widget.setCurrentWidget(self.jessica_init_widget)
         self.log_message("new jessica!")
         # self.jessica_init_config.emit()
 
     def add_new_logan(self):
-        self.logan_init_widget = LoganWidget(self, app, new=True)
+        self.logan_init_widget = LoganWidget(self, app)
         self.stacked_widget.addWidget(self.logan_init_widget)
         self.stacked_widget.setCurrentWidget(self.logan_init_widget)
         self.log_message("new logan!")
@@ -279,9 +281,6 @@ class AccorderGUI(QMainWindow):
         self.debug_widget.watch_state_machine.setText("FSM: {}".format(
             self.current_state))
         log.info("update_current_state: {}".format(message))
-
-    def get_jessica_motw_port(self):
-        return self.jessica_motw_port
 
     def local_cherrypy(self):
         # adding cherrypy into reactor loop
