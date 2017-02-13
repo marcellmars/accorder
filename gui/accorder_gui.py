@@ -1,58 +1,52 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import os
-import sys
+from base64 import decodebytes as b64d
+from base64 import encodebytes as b64e
+from functools import wraps
 import json
 import signal
-import random
-import uuid
-from functools import wraps
-from base64 import encodebytes as b64e
-from base64 import decodebytes as b64d
+import sys
 
 from pyaes import AESModeOfOperationCTR as aes_ctr
 
 import cherrypy
 
-from PyQt5.Qt import Qt
-from PyQt5.Qt import QObject
 from PyQt5.Qt import QApplication
 from PyQt5.Qt import QDialog
 from PyQt5.Qt import QMainWindow
+from PyQt5.Qt import QObject
 from PyQt5.Qt import QSplitter
-from PyQt5.Qt import QLineEdit
-from PyQt5.Qt import QLabel
-from PyQt5.Qt import QPushButton
-from PyQt5.Qt import QHBoxLayout
-from PyQt5.Qt import QSizePolicy
-from PyQt5.Qt import QVBoxLayout
-from PyQt5.Qt import QWidget
 from PyQt5.Qt import QStackedWidget
-from PyQt5.Qt import QFileDialog
+from PyQt5.Qt import Qt
 from PyQt5.Qt import pyqtSignal
 
-from autobahn.twisted.wamp import ApplicationSession
 from autobahn.twisted.wamp import ApplicationRunner
-from autobahn.wamp.types import SessionDetails
+from autobahn.twisted.wamp import ApplicationSession
 from autobahn.wamp.types import CloseDetails
+from autobahn.wamp.types import SessionDetails
 
-from twisted.internet.defer import inlineCallbacks
 from twisted.internet import task
-from twisted.web.wsgi import WSGIResource
+from twisted.internet.defer import inlineCallbacks
+from twisted.logger import Logger
+from twisted.logger import globalLogBeginner
+from twisted.logger import textFileLogObserver
 from twisted.web import server
+from twisted.web.wsgi import WSGIResource
 
 import qt5reactor
 
-# from statemachines import FooLoganChatAndRun
-from statemachines import SshRsync
-from externalprocesses import SSHTunnel
-from externalprocesses import Rsync
-import shuffled_words
-
+from logan_and_jessica_widgets import DebugInitDialog
+from logan_and_jessica_widgets import JessicaWidget
+from logan_and_jessica_widgets import LoganWidget
 
 DTAP_STAGE = 'development'
 # DTAP_STAGE = 'testing'
+
+globalLogBeginner.beginLoggingTo([textFileLogObserver(sys.stdout)])
+# log = Logger(observer=textFileLogObserver(open("accorder.log", "ab")))
+# globalLogBeginner.beginLoggingTo([textFileLogObserver(open("accorder.log", "ab"))])
+log = Logger()
 
 
 def check_secret(fn):
@@ -60,7 +54,7 @@ def check_secret(fn):
     def _impl(self, *args):
         self.path_hash = "file_hash_{}".format(args[0])
         h = self.d.get(args[0][1:].encode('utf8'))
-        print("FN: {}\nPATH: {}\nHASH: {}\n".format(fn, args[0], h))
+        log.info("FN: {}\nPATH: {}\nHASH: {}\n".format(fn, args[0], h))
         if h:
             args = list(args)
             args[0] = h
@@ -100,7 +94,7 @@ class Snipdom:
     def shutdown(self):
         self.kernel_manager.shutdown_kernel()
         self.kernel_manager.client().stop_channels()
-        print("ipython kernel_manager shutdown!")
+        log.info("ipython kernel_manager shutdown!")
 
 
 class AccorderMainWindow(QMainWindow):
@@ -121,15 +115,16 @@ class AccorderMainWindow(QMainWindow):
         self.hsplit.addWidget(self.vsplit)
 
     def closeEvent(self, ev):
-        print("close event!")
-        # self.accorder.ssh_tunnel.kill_tunnel()
-        self.accorder.rsync.kill_rsync()
+        log.info("close event!")
+        for i in self.accorder.stacked_widget.count():
+            self.accorder.stacked_widget.widget(i).ssh_tunnel.kill_tunnel()
+            self.accorder.stacked_widget.widget(i).rsync.kill_rsync()
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
-            print("threadpool.stopped!")
+            log.info("threadpool.stopped!")
         else:
             reactor.stop()
-            print("reactor.stopped")
+            log.info("reactor.stopped")
             if DTAP_STAGE == 'development':
                 self.snipdom.shutdown()
         app.quit()
@@ -150,225 +145,6 @@ class CrossClient(QObject, ApplicationSession):
     @inlineCallbacks
     def onLeave(self, details):
         yield self.leftSession.emit(details)
-
-
-class JessicaWidget(QDialog):
-    jessica_init_config = pyqtSignal()
-
-    def __init__(self, pitcher, new=False, parent=None):
-        QDialog.__init__(self)
-
-        self.pitcher = pitcher
-        if new:
-            new_session = uuid.uuid4().hex
-            self.pitcher.acconf['jessica'][new_session] = {}
-            conf = self.pitcher.acconf['jessica'][new_session]
-            conf['film_role'] = "jessica"
-
-        self.vlayout = QVBoxLayout()
-        self.setLayout(self.vlayout)
-
-        # session name
-        self.ss_session_name_layout = QHBoxLayout()
-        self.ss_session_name_container = QWidget()
-        self.ss_session_name_container.setLayout(self.ss_session_name_layout)
-
-        self.ss_session_name_label = QLabel("Session name: ")
-
-        shuffled_name = "Jessica {} {} {}".format(random.choice(shuffled_words.verbs),
-                                                  random.choice(shuffled_words.adjectives),
-                                                  random.choice(shuffled_words.nouns))
-        conf['name'] = shuffled_name
-
-        self.ss_session_name = QLineEdit(conf['name'])
-        self.ss_session_name.setObjectName("session_name")
-        self.ss_session_name.setSizePolicy(QSizePolicy.Expanding,
-                                        QSizePolicy.Expanding)
-        self.ss_session_name.setToolTip("change the session name")
-
-        self.ss_session_name_layout.addWidget(self.ss_session_name_label)
-        self.ss_session_name_layout.addWidget(self.ss_session_name)
-
-        # shared secret bar
-        self.ss_message_layout = QHBoxLayout()
-        self.ss_message_container = QWidget()
-        self.ss_message_container.setLayout(self.ss_message_layout)
-
-        self.ss_label = QLabel("Session secret: ")
-
-        conf['shared_secret'] = str(self.pitcher.shared_secret(uuid.uuid4().hex))
-
-        self.ss_message = QLabel(conf['shared_secret'])
-        self.ss_message.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.ss_message.setObjectName("session_secret")
-        self.ss_message.setSizePolicy(QSizePolicy.Expanding,
-                                      QSizePolicy.Expanding)
-
-        self.ss_apply = QPushButton("Copy secret for Logan")
-        self.ss_apply.clicked.connect(
-            # lambda: self.pitcher.shared_secret(self.ss_message.text())
-            lambda: app.clipboard().setText(self.ss_message.text())
-            )
-
-        self.ss_message_layout.addWidget(self.ss_label)
-        self.ss_message_layout.addWidget(self.ss_message)
-        self.ss_message_layout.addWidget(self.ss_apply)
-
-        # rsync dirpath bar
-        self.rsync_dirpath_layout = QHBoxLayout()
-        self.rsync_dirpath_container = QWidget()
-        self.rsync_dirpath_container.setLayout(self.rsync_dirpath_layout)
-
-        self.rsync_dirpath_label = QLabel("Directory path:")
-
-        self.rsync_dirpath = QLineEdit("")
-        self.rsync_dirpath.setObjectName("rsync_directory_path")
-        self.rsync_dirpath.setSizePolicy(QSizePolicy.Expanding,
-                                         QSizePolicy.Expanding)
-        self.rsync_dirpath.setToolTip("choose directory to be synced")
-
-        self.rsync_dirpath_button = QPushButton("...")
-        self.rsync_dirpath_button.clicked.connect(
-            lambda: self.rsync_dirpath.setText("{}{}".format(QFileDialog.getExistingDirectory(), os.path.sep))
-            )
-
-        self.rsync_dirpath_layout.addWidget(self.rsync_dirpath_label)
-        self.rsync_dirpath_layout.addWidget(self.rsync_dirpath)
-        self.rsync_dirpath_layout.addWidget(self.rsync_dirpath_button)
-
-        # start session and save the configuration
-
-        self.start_button = QPushButton("Save config")
-        self.start_button.clicked.connect(
-            lambda: self.save_config(conf)
-        )
-
-        # vertical layout list of bars
-        self.vlayout.addWidget(self.ss_session_name_container)
-        self.vlayout.addWidget(self.rsync_dirpath_container)
-        self.vlayout.addWidget(self.ss_message_container)
-        self.vlayout.addWidget(self.start_button)
-        self.vlayout.addStretch(1)
-
-    def save_config(self, conf):
-        conf['rsync'] = {}
-        conf['rsync']['port'] = int(random.random()*48000+1024)
-        conf['rsync']['directory_path'] = self.rsync_dirpath.text()
-
-        conf['cherrypy'] = {}
-        conf['cherrypy']['port'] = int(random.random()*48000+1024)
-        conf['cherrypy']['directory_path'] = self.rsync_dirpath.text()
-        conf['cherrypy']['calibre_index'] = "BROWSE_LIBRARY.html"
-
-        self.ssh_tunnel = SSHTunnel(conf['film_role'], self.pitcher.xb_session)
-        self.ssh_tunnel.ssh_log.connect(self.pitcher.log_message)
-
-        self.rsync = Rsync(conf['film_role'])
-        self.rsync.rsync_log.connect(self.pitcher.log_message)
-
-        self.state_machine = SshRsync(self)
-
-        print(json.dumps(self.pitcher.acconf,
-                         indent=4,
-                         sort_keys=True))
-
-
-class DebugInitDialog(QDialog):
-    def __init__(self, pitcher, parent=None):
-        QDialog.__init__(self)
-
-        self.pitcher = pitcher
-
-        self.vlayout = QVBoxLayout()
-        self.setLayout(self.vlayout)
-
-        self.ss_message_layout = QHBoxLayout()
-        self.ss_message_container = QWidget()
-        self.ss_message_container.setLayout(self.ss_message_layout)
-
-        self.ss_label = QLabel("Shared secret: ")
-
-        self.ss_message = QLineEdit(str(self.pitcher.shared_secret()))
-        self.ss_message.setObjectName("shared_secret")
-        self.ss_message.setSizePolicy(QSizePolicy.Expanding,
-                                      QSizePolicy.Expanding)
-        self.ss_message.setToolTip("change the shared secret")
-
-        self.ss_apply = QPushButton("Apply")
-        self.ss_apply.clicked.connect(
-            # lambda: self.pitcher.shared_secret(self.ss_message.text())
-            lambda: self.pitcher.shared_secret(self.ss_message.text())
-            )
-
-        self.ss_message_layout.addWidget(self.ss_label)
-        self.ss_message_layout.addWidget(self.ss_message)
-        self.ss_message_layout.addWidget(self.ss_apply)
-
-        self.pub_message_layout = QHBoxLayout()
-        self.pub_message_container = QWidget()
-        self.pub_message_container.setLayout(self.pub_message_layout)
-
-        self.publish_label = QLabel("Publish: ")
-
-        self.pub_message = QLineEdit("Lorem ipsum...")
-        self.pub_message.setObjectName("message")
-        self.pub_message.setSizePolicy(QSizePolicy.Expanding,
-                                       QSizePolicy.Expanding)
-        self.pub_message.setToolTip("Type your message here")
-
-        self.publish_channel = QLineEdit("com.accorder.default")
-        self.send_message = QPushButton("Publish")
-
-        self.send_message.clicked.connect(
-            lambda: self.pitcher.xb_publish(
-                    {'channel': self.publish_channel.text(),
-                     'message': self.pitcher.encrypt_message(
-                         json.dumps({'res': self.pub_message.text()})
-                     )}
-            )
-        )
-
-        self.pub_message_layout.addWidget(self.publish_label)
-        self.pub_message_layout.addWidget(self.publish_channel)
-        self.pub_message_layout.addWidget(self.pub_message)
-        self.pub_message_layout.addWidget(self.send_message)
-
-        self.sub_message_layout = QHBoxLayout()
-        self.sub_message_container = QWidget()
-        self.sub_message_container.setLayout(self.sub_message_layout)
-
-        self.subscribe_label = QLabel("Subscribe: ")
-
-        self.sub_callback = QLineEdit("on_message")
-        self.sub_callback.setObjectName("callback")
-        self.sub_callback.setSizePolicy(QSizePolicy.Expanding,
-                                        QSizePolicy.Expanding)
-
-        self.subscribe_channel = QLineEdit("com.accorder.default")
-        self.subscribe = QPushButton("Subscribe")
-
-        self.subscribe.clicked.connect(
-            lambda: self.pitcher.xb_subscribe(
-                    {'channel': self.subscribe_channel.text(),
-                     'callback': self.sub_callback.text()}
-            )
-        )
-
-        self.sub_message_layout.addWidget(self.subscribe_label)
-        self.sub_message_layout.addWidget(self.subscribe_channel)
-        self.sub_message_layout.addWidget(self.sub_callback)
-        self.sub_message_layout.addWidget(self.subscribe)
-
-        self.default_recv = QLabel("Default channel: ")
-        self.watch_state_machine = QLabel("State (machine): ")
-        self.watch_ssh_tunnel = QLabel("SSH Tunnel: ")
-
-        self.vlayout.addWidget(self.ss_message_container)
-        self.vlayout.addWidget(self.pub_message_container)
-        self.vlayout.addWidget(self.sub_message_container)
-        self.vlayout.addWidget(self.default_recv)
-        self.vlayout.addWidget(self.watch_state_machine)
-        self.vlayout.addWidget(self.watch_ssh_tunnel)
 
 
 class AccorderGUI(QMainWindow):
@@ -409,10 +185,11 @@ class AccorderGUI(QMainWindow):
 
         # self.ssh_tunnel = SSHTunnel(self.film_role)
         # main GUI bloat
-        print("SelfSession: {}".format(self.xb_session))
+        log.info("SelfSession: {}".format(self.xb_session))
         self.stacked_widget = QStackedWidget()
 
         self.debug_widget = DebugInitDialog(self)
+        self.empty_widget = QDialog()
         self.logan_menu = self.menuBar().addMenu("&Logan")
         self.logan_menu.addAction("Add &new sync").triggered.connect(self.add_new_logan)
         self.menuBar().addAction("&&").setEnabled(False)
@@ -420,7 +197,8 @@ class AccorderGUI(QMainWindow):
         self.jessica_menu.addAction("Add &new sync").triggered.connect(self.add_new_jessica)
 
         self.stacked_widget.addWidget(self.debug_widget)
-        self.stacked_widget.setCurrentWidget(self.debug_widget)
+        self.stacked_widget.addWidget(self.empty_widget)
+        self.stacked_widget.setCurrentWidget(self.empty_widget)
         self.setCentralWidget(self.stacked_widget)
 
         # self.state_machine = FooLoganChatAndRun(self)
@@ -428,28 +206,30 @@ class AccorderGUI(QMainWindow):
 
     @inlineCallbacks
     def xb_publish(self, c_m):
-        print("publish: {}".format(c_m))
+        log.info("publish: {}".format(c_m))
         yield self.xb_session.publish(c_m['channel'], c_m['message'])
 
     @inlineCallbacks
     def xb_subscribe(self, c_m):
-        print("subscribe: {}".format(c_m))
+        log.info("subscribe: {}".format(c_m))
         # eval only for testing!!!
         yield self.xb_session.subscribe(eval("self.{}".format(c_m['callback'])),
                                      c_m['channel'])
         for s in self.xb_session._subscriptions:
-            print("subscriptions: {}".format(s))
+            log.info("subscriptions: {}".format(s))
 
     def on_join_session(self):
-        self.film_role = "jessica"
-        get_session_id = "__{}_{}_{}".format(str(self.shared_secret()),
-                                             self.film_role,
-                                             "get_session_id")
-        self.xb_session.register(lambda: self.xb_session._session_id,
-                              "com.accorder.{}".format(get_session_id))
+        log.info("on_join_session triggered!")
+        pass
+        # self.film_role = "jessica"
+        # get_session_id = "__{}_{}_{}".format(str(self.shared_secret()),
+        #                                      self.film_role,
+        #                                      "get_session_id")
+        # self.xb_session.register(lambda: self.xb_session._session_id,
+        #                       "com.accorder.{}".format(get_session_id))
 
     def on_leave_session(self):
-        print('leave')
+        log.info('leave')
 
     def encrypt_message(self, msg):
         # need to convert encrypted message into 'utf-8' because JSON serialization
@@ -467,35 +247,38 @@ class AccorderGUI(QMainWindow):
         return self.shar_sec
 
     def on_message(self, message):
-        print("on_message: {}".format(message))
+        log.info("on_message: {}".format(message))
         message = self.decrypt_message(message)
-        print("decrypted: {}".format(message))
+        log.info("decrypted: {}".format(message))
         j = (json.loads(message.decode('utf-8')))
         self.debug_widget.default_recv.setText("Default channel: {}".format(j['res']))
 
     def add_new_jessica(self):
-        self.jessica_init_widget = JessicaWidget(self, new=True)
+        self.jessica_init_widget = JessicaWidget(self, app, new=True)
         self.stacked_widget.addWidget(self.jessica_init_widget)
         self.stacked_widget.setCurrentWidget(self.jessica_init_widget)
         self.log_message("new jessica!")
         # self.jessica_init_config.emit()
 
     def add_new_logan(self):
+        self.logan_init_widget = LoganWidget(self, app, new=True)
+        self.stacked_widget.addWidget(self.logan_init_widget)
+        self.stacked_widget.setCurrentWidget(self.logan_init_widget)
         self.log_message("new logan!")
 
     def log_message(self, msg="nothing passed..."):
-        print("LOG MESSAGE: {}".format(msg))
+        log.info("LOG MESSAGE: {}".format(msg))
         self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(msg))
 
     def log_cherry(self, e):
-        print("LOG MESSAGE: {}".format(str(e)))
+        log.info("LOG MESSAGE: {}".format(str(e)))
         self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(str(e)))
 
     def update_current_state(self, message):
         self.current_state = message
         self.debug_widget.watch_state_machine.setText("FSM: {}".format(
             self.current_state))
-        print("update_current_state: {}".format(message))
+        log.info("update_current_state: {}".format(message))
 
     def get_jessica_motw_port(self):
         return self.jessica_motw_port

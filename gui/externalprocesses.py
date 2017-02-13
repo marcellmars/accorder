@@ -1,11 +1,14 @@
-import random
 import os
+import random
 
-from PyQt5.Qt import QObject
 from PyQt5.Qt import pyqtSignal
+from PyQt5.Qt import QObject
 
-from twisted.internet.protocol import ProcessProtocol
 from twisted.internet import error
+from twisted.internet.protocol import ProcessProtocol
+from twisted.logger import Logger
+
+log = Logger()
 
 
 class SSHTunnel(QObject, ProcessProtocol):
@@ -21,11 +24,11 @@ class SSHTunnel(QObject, ProcessProtocol):
         self.session = session
 
     def childDataReceived(self, cfd, data):
-        print(u"{}: {}".format(cfd, data.decode()))
+        log.info(u"{}: {}".format(cfd, data.decode()))
         self.ssh_log.emit(u"{}".format(data.decode()[:30]))
 
     def connectionMade(self):
-        print(u"Tunnel established...")
+        log.info(u"Tunnel established...")
         if self.film_role == "jessica":
             self.jessica_established.emit()
         else:
@@ -38,7 +41,7 @@ class SSHTunnel(QObject, ProcessProtocol):
             self.jessica_ended.emit()
         else:
             self.logan_ended.emit()
-        print(u"{}'s tunnel ended: {}".format(self.film_role, reason))
+        log.info(u"{}'s tunnel ended: {}".format(self.film_role, reason))
 
     def run_tunnel(self, conf, reactor):
         # jessica: ssh -N ssh.pede.rs -l tunnel -R 10000:localhost:10101 -p 443
@@ -49,7 +52,7 @@ class SSHTunnel(QObject, ProcessProtocol):
         # self.jessica_motw_port = self.acconf['ssh_remote_port']
         jessica_motw_port = conf['jessica_motw_port']
         # conf['jessica_motw_port'] = int(random.random()*48000+1024)
-        print("remote ssh port: {}".format(self.jessica_motw_port))
+        log.info("remote ssh port: {}".format(self.jessica_motw_port))
         # lport = self.acconf['cherrypy_port']
         jessica_rsync_port = int(random.random()*48000+1024)
         ssh_port = self.acconf['ssh_port']
@@ -91,7 +94,7 @@ class SSHTunnel(QObject, ProcessProtocol):
     def kill_tunnel(self):
         try:
             if self.transport:
-                print("kill transport: {}".format(self.transport))
+                log.info("kill transport: {}".format(self.transport))
                 self.transport.signalProcess('KILL')
         except error.ProcessExitedAlready:
             self.ssh_log.emit(u"{}'s tunnel already dead...".format(self.film_role))
@@ -109,14 +112,14 @@ class Rsync(QObject, ProcessProtocol):
         self.film_role = film_role
 
     def childDataReceived(self, cfd, data):
-        print(u"{}: {}".format(cfd, data.decode()))
+        log.info(u"{}: {}".format(cfd, data.decode()))
         self.rsync_log.emit(u"{}".format(data.decode()[:30]))
 
     def errReceived(self, data):
         self.rsync_log.emit(u"{}".format(data.decode()))
 
     def connectionMade(self):
-        print(u"Rsync running...")
+        log.info(u"Rsync running...")
         if self.film_role == "jessica":
             self.jessica_established.emit()
         else:
@@ -129,7 +132,7 @@ class Rsync(QObject, ProcessProtocol):
             self.jessica_ended.emit()
         else:
             self.logan_ended.emit()
-        print(u"Rsync ended: {}".format(reason))
+        log.info(u"Rsync ended: {}".format(reason))
 
     def run_rsync(self, conf, reactor):
         # self.local_cherrypy()
@@ -143,11 +146,10 @@ class Rsync(QObject, ProcessProtocol):
                          conf['rsync']['directory_path']]
         reactor.spawnProcess(self, 'rsync', rsync_options)
 
-
     def kill_rsync(self):
         try:
             if self.transport:
-                print("kill transport: {}".format(self.transport))
+                log.info("kill transport: {}".format(self.transport))
                 self.transport.signalProcess('KILL')
         except error.ProcessExitedAlready:
             self.rsync_log.emit(u"Rsync already dead...")

@@ -1,6 +1,6 @@
 from PyQt5.Qt import QObject
-from PyQt5.Qt import QStateMachine
 from PyQt5.Qt import QState
+from PyQt5.Qt import QStateMachine
 
 
 class FooLoganChatAndRun(QObject):
@@ -125,13 +125,14 @@ class SshRsync(QObject):
         rsync_init_jessica.addTransition(self.pitcher.rsync.jessica_established,
                                          rsync_running_jessica)
 
-        # rsync_running_jessica.addTransition(init_logan)
+        rsync_running_jessica.addTransition(init_logan)
 
-        # init_logan.addTransition(self.pitcher.logan_init_config, ssh_init_logan)
-        # ssh_init_logan.addTransition(self.pitcher.ssh_tunnel.logan_established, ssh_running_logan)
-        # ssh_running_logan.addTransition(rsync_init_logan)
-        # rsync_init_logan.addTransition(self.pitcher.rsync.logan_established,
-        #                                rsync_running_logan)
+        init_logan.addTransition(self.pitcher.remote_logan_init_config, ssh_init_logan)
+        ssh_init_logan.addTransition(self.pitcher.remote_logan_tunnel_established,
+                                     ssh_running_logan)
+        ssh_running_logan.addTransition(rsync_init_logan)
+        rsync_init_logan.addTransition(self.pitcher.remote_logan_rsync_established,
+                                       rsync_running_logan)
 
         self.fsm.setInitialState(logan_jessica)
         self.fsm.start()
