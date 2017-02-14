@@ -13,9 +13,10 @@ from pyaes import AESModeOfOperationCTR as aes_ctr
 import cherrypy
 
 from PyQt5.Qt import QApplication
-from PyQt5.Qt import QDialog
+from PyQt5.Qt import QLabel
 from PyQt5.Qt import QMainWindow
 from PyQt5.Qt import QObject
+from PyQt5.Qt import QPixmap
 from PyQt5.Qt import QSplitter
 from PyQt5.Qt import QStackedWidget
 from PyQt5.Qt import Qt
@@ -116,7 +117,7 @@ class AccorderMainWindow(QMainWindow):
 
     def closeEvent(self, ev):
         log.info("close event!")
-        for i in self.accorder.stacked_widget.count():
+        for i in range(self.accorder.stacked_widget.count()):
             self.accorder.stacked_widget.widget(i).ssh_tunnel.kill_tunnel()
             self.accorder.stacked_widget.widget(i).rsync.kill_rsync()
         if reactor.threadpool is not None:
@@ -188,17 +189,21 @@ class AccorderGUI(QMainWindow):
         log.info("SelfSession: {}".format(self.xb_session))
         self.stacked_widget = QStackedWidget()
 
-        self.debug_widget = DebugInitDialog(self)
-        self.empty_widget = QDialog()
+        # self.debug_widget = DebugInitDialog(self)
+        self.welcome_widget = QLabel()
+        self.welcome_widget.setPixmap(QPixmap("logan_and_jessica.png"))
+        self.welcome_widget.setAlignment(Qt.AlignCenter)
+        self.welcome_widget.setStyleSheet("QLabel {background-color: white;}")
+
         self.logan_menu = self.menuBar().addMenu("&Logan")
         self.logan_menu.addAction("Add &new sync").triggered.connect(self.add_new_logan)
         self.menuBar().addAction("&&").setEnabled(False)
         self.jessica_menu = self.menuBar().addMenu("&Jessica")
         self.jessica_menu.addAction("Add &new sync").triggered.connect(self.add_new_jessica)
 
-        self.stacked_widget.addWidget(self.debug_widget)
-        self.stacked_widget.addWidget(self.empty_widget)
-        self.stacked_widget.setCurrentWidget(self.empty_widget)
+        # self.stacked_widget.addWidget(self.debug_widget)
+        self.stacked_widget.addWidget(self.welcome_widget)
+        self.stacked_widget.setCurrentWidget(self.welcome_widget)
         self.setCentralWidget(self.stacked_widget)
 
         # self.state_machine = FooLoganChatAndRun(self)
@@ -253,7 +258,7 @@ class AccorderGUI(QMainWindow):
         message = self.decrypt_message(message)
         log.info("decrypted: {}".format(message))
         j = (json.loads(message.decode('utf-8')))
-        self.debug_widget.default_recv.setText("Default channel: {}".format(j['res']))
+        # self.debug_widget.default_recv.setText("Default channel: {}".format(j['res']))
 
     def add_new_jessica(self):
         self.jessica_init_widget = JessicaWidget(self, app)
@@ -270,25 +275,24 @@ class AccorderGUI(QMainWindow):
 
     def log_message(self, msg="nothing passed..."):
         log.info("LOG MESSAGE: {}".format(msg))
-        self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(msg))
+        # self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(msg))
 
     def log_cherry(self, e):
         log.info("LOG MESSAGE: {}".format(str(e)))
-        self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(str(e)))
+        # self.debug_widget.watch_ssh_tunnel.setText("Log message: {}".format(str(e)))
 
     def update_current_state(self, message):
         self.current_state = message
-        self.debug_widget.watch_state_machine.setText("FSM: {}".format(
-            self.current_state))
+        # self.debug_widget.watch_state_machine.setText("FSM: {}".format(self.current_state))
         log.info("update_current_state: {}".format(message))
 
-    def local_cherrypy(self):
+    def local_cherrypy(self, dir_path, index_file, port):
         # adding cherrypy into reactor loop
         CONF = {'/': {'tools.session_auth.on': True,
                       'tools.sessions.on': True,
                       'tools.staticdir.on': True,
-                      'tools.staticdir.dir': self.acconf['http_shared_dir'],
-                      'tools.staticdir.index': self.acconf['http_shared_index']}}
+                      'tools.staticdir.dir': dir_path,
+                      'tools.staticdir.index': index_file}}
 
         wsgiapp = cherrypy.tree.mount(Root(), "/", config=CONF)
         cherrypy.tools.session_auth = cherrypy.Tool('before_handler', cherrypy_shared_secret)
@@ -306,7 +310,7 @@ class AccorderGUI(QMainWindow):
         cherry_logs.addErrback(self.cherry_error.emit)
         cherry_logs.addCallback(self.cherry_error.emit)
         self.cherry_error.connect(self.log_cherry)
-        self.cherry_connection = reactor.listenTCP(self.acconf['cherrypy_port'], site)
+        self.cherry_connection = reactor.listenTCP(port, site)
 
 
 def cherrypy_shared_secret(*args, **kwargs):
@@ -328,9 +332,23 @@ class Root(object):
 if __name__ == '__main__':
     if len(sys.argv) >= 1:
         if len(sys.argv) == 2:
-            ACCONF = json.load(open(sys.argv[1]))
+            try:
+                ACCONF = json.load(open(sys.argv[1]))
+                test = ACCONF['logan']
+                test = ACCONF['jessica']
+            except:
+                ACCONF = {}
+                ACCONF['jessica'] = {}
+                ACCONF['logan'] = {}
         else:
-            ACCONF = json.load(open("accorder.json"))
+            try:
+                ACCONF = json.load(open("accorder.json"))
+                test = ACCONF['logan']
+                test = ACCONF['jessica']
+            except:
+                ACCONF = {}
+                ACCONF['jessica'] = {}
+                ACCONF['logan'] = {}
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
