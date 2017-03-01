@@ -68,8 +68,10 @@ def check_secret(fn):
 
 class Snipdom:
     def __init__(self, accorder):
-        from IPython.qt.console.rich_ipython_widget import RichJupyterWidget
-        from IPython.qt.inprocess import QtInProcessKernelManager
+        # from IPython.qt.console.rich_ipython_widget import RichJupyterWidget
+        from qtconsole.rich_ipython_widget import RichJupyterWidget
+        # from IPython.qt.inprocess import QtInProcessKernelManager
+        from qtconsole.inprocess import QtInProcessKernelManager
 
         self.accorder = accorder
         self.kernel_manager = QtInProcessKernelManager()
@@ -116,10 +118,14 @@ class AccorderMainWindow(QMainWindow):
         self.hsplit.addWidget(self.vsplit)
 
     def closeEvent(self, ev):
-        log.info("close event!")
+        log.info("closing app!")
         for i in range(self.accorder.stacked_widget.count()):
-            self.accorder.stacked_widget.widget(i).ssh_tunnel.kill_tunnel()
-            self.accorder.stacked_widget.widget(i).rsync.kill_rsync()
+            w = self.accorder.stacked_widget.widget(i)
+            if hasattr(w, 'ssh_tunnel') and w.ssh_tunnel.transport:
+                self.accorder.stacked_widget.widget(i).ssh_tunnel.kill_tunnel()
+            elif hasattr(w, 'rsync') and w.rsync.transport:
+                self.accorder.stacked_widget.widget(i).rsync.kill_rsync()
+
         if reactor.threadpool is not None:
             reactor.threadpool.stop()
             log.info("threadpool.stopped!")
@@ -225,7 +231,6 @@ class AccorderGUI(QMainWindow):
 
     def on_join_session(self):
         log.info("on_join_session triggered!")
-        pass
         # self.film_role = "jessica"
         # get_session_id = "__{}_{}_{}".format(str(self.shared_secret()),
         #                                      self.film_role,

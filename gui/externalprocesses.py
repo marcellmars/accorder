@@ -90,7 +90,6 @@ class SSHTunnel(QObject, ProcessProtocol):
         reactor.spawnProcess(self, 'ssh', ssh_options, env=os.environ)
 
 
-
     def kill_tunnel(self):
         try:
             if self.transport:
