@@ -32,10 +32,11 @@ class LoganWidget(QDialog):
     logan_tunnel_established = pyqtSignal()
     rsync_established = pyqtSignal()
 
-    def __init__(self, pitcher, app, lj_session=None, parent=None):
+    def __init__(self, pitcher, app, reactor, lj_session=None, parent=None):
         QDialog.__init__(self)
 
         self.pitcher = pitcher
+        self.reactor = reactor
 
         if not lj_session:
             # new logan session
@@ -45,6 +46,8 @@ class LoganWidget(QDialog):
             conf['film_role'] = "logan"
             conf['shared_secret'] = ""
             conf['name'] = ""
+            conf['rsync'] = {}
+            conf['rsync']['port'] = int(random.random()*48000+1024)
         else:
             self.lj_session = lj_session
             conf = self.pitcher.acconf['logan'][self.lj_session]
@@ -72,7 +75,6 @@ class LoganWidget(QDialog):
         self.ss_message_layout.addWidget(self.ss_label)
         self.ss_message_layout.addWidget(self.ss_message)
         self.ss_message_layout.addWidget(self.ss_apply)
-
 
         # rsync dirpath bar
         self.rsync_dirpath_layout = QHBoxLayout()
@@ -179,12 +181,6 @@ class LoganWidget(QDialog):
 
     @inlineCallbacks
     def save_config(self, conf):
-        self.ssh_tunnel = SSHTunnel(conf['film_role'], self.pitcher.xb_session)
-        self.ssh_tunnel.ssh_log.connect(self.pitcher.log_message)
-
-        self.rsync = Rsync(conf['film_role'])
-        self.rsync.rsync_log.connect(self.pitcher.log_message)
-
         get_conf_for_logan = "com.accorder.__{}_{}_{}".format(self.ss_message.text(),
                                                               "jessica",
                                                               "get_conf_for_logan")
@@ -201,6 +197,29 @@ class LoganWidget(QDialog):
                                indent=4,
                                sort_keys=True))
 
+        conf['rsync']['directory_path'] = self.rsync_dirpath.text()
+
+        self.ssh_tunnel = SSHTunnel(conf, self.reactor, self.pitcher.xb_session)
+        self.ssh_tunnel.ssh_log.connect(self.pitcher.log_message)
+
+        self.rsync = Rsync(conf, self.reactor)
+        self.rsync.rsync_log.connect(self.pitcher.log_message)
+
+        # this should call registered rpc on jessica side
+        self.logan_init_config.emit()
+
+        run_logan_tunnel = "__{}_{}_{}".format(self.ss_message.text(),
+                                               "logan",
+                                               "run_tunnel")
+        self.pitcher.xb_session.register(lambda: self.ssh_tunnel.run_tunnel,
+                                         "com.accorder.{}".format(run_logan_tunnel))
+
+        run_logan_rsync = "__{}_{}_{}".format(self.ss_message.text(),
+                                              "logan",
+                                              "run_rsync")
+        self.pitcher.xb_session.register(lambda: self.rsync.run_rsync,
+                                         "com.accorder.{}".format(run_logan_rsync))
+
 
 class JessicaWidget(QDialog):
     jessica_init_config = pyqtSignal()
@@ -208,10 +227,11 @@ class JessicaWidget(QDialog):
     remote_logan_tunnel_established = pyqtSignal()
     remote_logan_rsync_established = pyqtSignal()
 
-    def __init__(self, pitcher, app, lj_session=None, parent=None):
+    def __init__(self, pitcher, app, reactor, lj_session=None, parent=None):
         QDialog.__init__(self)
 
         self.pitcher = pitcher
+        self.reactor = reactor
 
         if not lj_session:
             # new jessica session
@@ -304,7 +324,6 @@ class JessicaWidget(QDialog):
 
         self.ss_label = QLabel("Session secret: ")
 
-
         self.ss_message = QLabel(conf['shared_secret'])
         self.ss_message.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.ss_message.setObjectName("session_secret")
@@ -367,13 +386,13 @@ class JessicaWidget(QDialog):
         conf['ssh']['server'] = self.ssh_proxy.text()
         conf['ssh']['username'] = self.ssh_user.text()
         conf['ssh']['port'] = self.ssh_port.text()
-        conf['ssh']['key_path'] = self.ssh_key_path.text()
+        # ssh_key_path_text = self.ssh_key_path.text()
         conf['ssh']['remote_port'] = int(random.random()*48000+1024)
 
-        self.ssh_tunnel = SSHTunnel(conf['film_role'], self.pitcher.xb_session)
+        self.ssh_tunnel = SSHTunnel(conf, self.reactor, self.pitcher.xb_session)
         self.ssh_tunnel.ssh_log.connect(self.pitcher.log_message)
 
-        self.rsync = Rsync(conf['film_role'])
+        self.rsync = Rsync(conf, self.reactor)
         self.rsync.rsync_log.connect(self.pitcher.log_message)
 
         self.state_machine = SshRsync(self)
@@ -495,4 +514,3 @@ class DebugInitDialog(QDialog):
         self.vlayout.addWidget(self.default_recv)
         self.vlayout.addWidget(self.watch_state_machine)
         self.vlayout.addWidget(self.watch_ssh_tunnel)
-

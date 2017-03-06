@@ -2,6 +2,9 @@ from PyQt5.Qt import QObject
 from PyQt5.Qt import QState
 from PyQt5.Qt import QStateMachine
 
+from externalprocesses import SSHTunnel
+from externalprocesses import Rsync
+
 
 class FooLoganChatAndRun(QObject):
     def __init__(self, pitcher):
@@ -80,10 +83,13 @@ class SshRsync(QObject):
 
         jessica_session = QState(logan_jessica)
         init_jessica = QState(jessica_session)
+        remote_logan_init_config = QState(jessica_session)
         ssh_init_jessica = QState(jessica_session)
         ssh_running_jessica = QState(jessica_session)
         rsync_init_jessica = QState(jessica_session)
         rsync_running_jessica = QState(jessica_session)
+        remote_logan_tunnel_established = QState(jessica_session)
+        remote_logan_rsync_established = QState(jessica_session)
 
         logan_session = QState(logan_jessica)
         init_logan = QState(logan_session)
@@ -92,8 +98,21 @@ class SshRsync(QObject):
         rsync_init_logan = QState(logan_session)
         rsync_running_logan = QState(logan_session)
 
+        # jessica session
         init_jessica.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "init_jessica"))
+        )
+
+        remote_logan_init_config.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "remote_logan_init_config"))
+        )
+
+        remote_logan_tunnel_established.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "remote_logan_tunnel_established"))
+        )
+
+        remote_logan_rsync_established.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "remote_logan_rsync_established"))
         )
 
         ssh_init_jessica.entered.connect(
@@ -115,10 +134,36 @@ class SshRsync(QObject):
             lambda: self.update_current_state(("logan_jessica", "rsync_running_jessica"))
         )
 
+        # logan session
+        init_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "init_logan"))
+        )
+
+        ssh_init_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "ssh_init_logan"))
+        )
+        # ssh_init_logan.entered.connect(self.pitcher.ssh_tunnel.run_tunnel)
+
+        ssh_running_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "ssh_running_logan"))
+        )
+        # ssh_running_logan.entered.connect(self.pitcher.get_jessica_motw_port)
+
+        rsync_init_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "rsync_init_logan"))
+        )
+        # rsync_init_logan.entered.connect(self.pitcher.rsync.run_rsync)
+
+        rsync_running_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "rsync_running_logan"))
+        )
+
         jessica_session.setInitialState(init_jessica)
         logan_session.setInitialState(init_logan)
 
-        init_jessica.addTransition(self.pitcher.jessica_init_config, ssh_init_jessica)
+        init_jessica.addTransition(self.pitcher.jessica_init_config, remote_logan_init_config)
+        remote_logan_init_config.addTransition(self.pitcher.logan_init_config,
+                                               ssh_init_jessica)
         ssh_init_jessica.addTransition(self.pitcher.ssh_tunnel.jessica_established,
                                        ssh_running_jessica)
         ssh_running_jessica.addTransition(rsync_init_jessica)
@@ -127,7 +172,7 @@ class SshRsync(QObject):
 
         rsync_running_jessica.addTransition(init_logan)
 
-        init_logan.addTransition(self.pitcher.remote_logan_init_config, ssh_init_logan)
+        init_logan.addTransition(self.pitcher.remote_jessica_init_session, ssh_init_logan)
         ssh_init_logan.addTransition(self.pitcher.remote_logan_tunnel_established,
                                      ssh_running_logan)
         ssh_running_logan.addTransition(rsync_init_logan)

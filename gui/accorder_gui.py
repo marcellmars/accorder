@@ -37,9 +37,10 @@ from twisted.web.wsgi import WSGIResource
 
 import qt5reactor
 
-from logan_and_jessica_widgets import DebugInitDialog
+# from logan_and_jessica_widgets import DebugInitDialog
 from logan_and_jessica_widgets import JessicaWidget
 from logan_and_jessica_widgets import LoganWidget
+
 
 DTAP_STAGE = 'development'
 # DTAP_STAGE = 'testing'
@@ -212,9 +213,6 @@ class AccorderGUI(QMainWindow):
         self.stacked_widget.setCurrentWidget(self.welcome_widget)
         self.setCentralWidget(self.stacked_widget)
 
-        # self.state_machine = FooLoganChatAndRun(self)
-        # self.state_machine = SshRsync(self)
-
     @inlineCallbacks
     def xb_publish(self, c_m):
         log.info("publish: {}".format(c_m))
@@ -225,7 +223,7 @@ class AccorderGUI(QMainWindow):
         log.info("subscribe: {}".format(c_m))
         # eval only for testing!!!
         yield self.xb_session.subscribe(eval("self.{}".format(c_m['callback'])),
-                                     c_m['channel'])
+                                        c_m['channel'])
         for s in self.xb_session._subscriptions:
             log.info("subscriptions: {}".format(s))
 
@@ -262,18 +260,18 @@ class AccorderGUI(QMainWindow):
         log.info("on_message: {}".format(message))
         message = self.decrypt_message(message)
         log.info("decrypted: {}".format(message))
-        j = (json.loads(message.decode('utf-8')))
+        # j = (json.loads(message.decode('utf-8')))
         # self.debug_widget.default_recv.setText("Default channel: {}".format(j['res']))
 
     def add_new_jessica(self):
-        self.jessica_init_widget = JessicaWidget(self, app)
+        self.jessica_init_widget = JessicaWidget(self, app, reactor)
         self.stacked_widget.addWidget(self.jessica_init_widget)
         self.stacked_widget.setCurrentWidget(self.jessica_init_widget)
         self.log_message("new jessica!")
         # self.jessica_init_config.emit()
 
     def add_new_logan(self):
-        self.logan_init_widget = LoganWidget(self, app)
+        self.logan_init_widget = LoganWidget(self, app, reactor)
         self.stacked_widget.addWidget(self.logan_init_widget)
         self.stacked_widget.setCurrentWidget(self.logan_init_widget)
         self.log_message("new logan!")
@@ -366,7 +364,9 @@ if __name__ == '__main__':
 
         # pyqt gui stuff
         # accorder = AccorderGUI(url=u"ws://memoryoftheworld.org:8080/ws", realm="realm1", acconf=ACCONF)
-        accorder = AccorderGUI(url=u"wss://wss.memoryoftheworld.org/ws", realm="realm1", acconf=ACCONF)
+        accorder = AccorderGUI(url=u"wss://wss.memoryoftheworld.org/ws",
+                               realm="realm1",
+                               acconf=ACCONF)
         snipdom = AccorderMainWindow(accorder)
         snipdom.vsplit.insertWidget(0, accorder)
         snipdom.show()
