@@ -50,12 +50,12 @@ class SSHTunnel(QObject, ProcessProtocol):
         # logan: ssh -N ssh.pede.rs -L 10200:ssh.pede.rs:10000 -l tunnel -p 443
         # logan: rsync -zvrith rsync://foo@localhost:10200/foo bar/
 
+        log.info("RUN TUNNEL!")
         ssh_server = self.conf['ssh']['server']
         ssh_port = self.conf['ssh']['port']
         jessica_motw_port = self.conf['ssh']['remote_port']
         # lport = self.acconf['cherrypy_port']
         rsync_port = self.conf['rsync']['port']
-        log.info("jessica_motw_port: {}".format(jessica_motw_port))
 
         ssh_options = ['ssh_accorder',
                        '-T', '-N', '-g', '-C',
@@ -75,6 +75,7 @@ class SSHTunnel(QObject, ProcessProtocol):
                                                             ssh_server,
                                                             rsync_port)])
 
+        log.info("jessica_motw_port: {}".format(jessica_motw_port))
         self.reactor.spawnProcess(self, 'ssh', ssh_options, env=os.environ)
 
     def kill_tunnel(self):
@@ -131,7 +132,7 @@ class Rsync(QObject, ProcessProtocol):
                          '--port',
                          self.conf['rsync']['port'],
                          '--config',
-                         self.onf['rsync']['directory_path']]
+                         self.conf['rsync']['directory_path']]
         self.reactor.spawnProcess(self, 'rsync', rsync_options)
 
     def kill_rsync(self):

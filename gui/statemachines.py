@@ -114,6 +114,24 @@ class SshRsync(QObject):
             lambda: self.update_current_state(("logan_jessica", "remote_logan_init_config"))
         )
 
+        ssh_init_jessica.entered.connect(self.pitcher.ssh_tunnel.run_tunnel)
+        ssh_init_jessica.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "ssh_init_jessica"))
+        )
+
+        ssh_running_jessica.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "ssh_running_jessica"))
+        )
+
+        rsync_init_jessica.entered.connect(self.pitcher.rsync.run_rsync)
+        rsync_init_jessica.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "rsync_init_jessica"))
+        )
+
+        rsync_running_jessica.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "rsync_running_jessica"))
+        )
+
         remote_logan_tunnel_established.entered.connect(
             lambda: self.update_current_state(("logan_jessica", "remote_logan_tunnel_established"))
         )
@@ -122,24 +140,6 @@ class SshRsync(QObject):
             lambda: self.update_current_state(("logan_jessica", "remote_logan_rsync_established"))
         )
 
-        ssh_init_jessica.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "ssh_init_jessica"))
-        )
-        # ssh_init_jessica.entered.connect(self.pitcher.ssh_tunnel.run_tunnel)
-
-        ssh_running_jessica.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "ssh_running_jessica"))
-        )
-        # ssh_running_jessica.entered.connect(self.pitcher.get_jessica_motw_port)
-
-        rsync_init_jessica.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "rsync_init_jessica"))
-        )
-        # rsync_init_jessica.entered.connect(self.pitcher.rsync.run_rsync)
-
-        rsync_running_jessica.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "rsync_running_jessica"))
-        )
 
         # logan session
         init_logan.entered.connect(

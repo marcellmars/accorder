@@ -47,7 +47,7 @@ class LoganWidget(QDialog):
             conf['shared_secret'] = ""
             conf['name'] = ""
             conf['rsync'] = {}
-            conf['rsync']['port'] = int(random.random()*48000+1024)
+            conf['rsync']['port'] = str(int(random.random()*48000+1024))
         else:
             self.lj_session = lj_session
             conf = self.pitcher.acconf['logan'][self.lj_session]
@@ -379,14 +379,14 @@ class JessicaWidget(QDialog):
         conf['shared_secret'] = self.ss_message.text()
         # ssh_key_path_text = self.ssh_key_path.text()
         conf['rsync'] = {}
-        conf['rsync']['port'] = int(random.random()*48000+1024)
+        conf['rsync']['port'] = str(int(random.random()*48000+1024))
         conf['rsync']['directory_path'] = self.rsync_dirpath.text()
         conf['ssh'] = {}
         conf['ssh']['server'] = self.ssh_proxy.text()
         conf['ssh']['username'] = self.ssh_user.text()
         conf['ssh']['port'] = self.ssh_port.text()
         # ssh_key_path_text = self.ssh_key_path.text()
-        conf['ssh']['remote_port'] = int(random.random()*48000+1024)
+        conf['ssh']['remote_port'] = str(int(random.random()*48000+1024))
 
         self.ssh_tunnel = SSHTunnel(conf, self.reactor, self.pitcher.xb_session)
         self.ssh_tunnel.ssh_log.connect(self.pitcher.log_message)
