@@ -28,7 +28,7 @@ log = Logger()
 
 
 class LoganWidget(QDialog):
-    logan_init_config = pyqtSignal()
+    # logan_init_config = pyqtSignal()
     logan_tunnel_established = pyqtSignal()
     rsync_established = pyqtSignal()
 
@@ -153,7 +153,7 @@ class LoganWidget(QDialog):
         self.ssh_port.setToolTip("change ssh port")
 
         self.ssh_key_path_label = QLabel("key:")
-        self.ssh_key_path = QLineEdit(conf['key_path'])
+        self.ssh_key_path = QLineEdit()
         self.ssh_key_path.setObjectName("ssh_key_path")
         self.ssh_key_path.setToolTip("change key path")
 
@@ -181,6 +181,7 @@ class LoganWidget(QDialog):
 
     @inlineCallbacks
     def save_config(self, conf):
+
         get_conf_for_logan = "com.accorder.__{}_{}_{}".format(self.ss_message.text(),
                                                               "jessica",
                                                               "get_conf_for_logan")
@@ -197,6 +198,7 @@ class LoganWidget(QDialog):
                                indent=4,
                                sort_keys=True))
 
+        conf['shared_secret'] = self.ss_message.text()
         conf['rsync']['directory_path'] = self.rsync_dirpath.text()
 
         self.ssh_tunnel = SSHTunnel(conf, self.reactor, self.pitcher.xb_session)
@@ -205,20 +207,14 @@ class LoganWidget(QDialog):
         self.rsync = Rsync(conf, self.reactor)
         self.rsync.rsync_log.connect(self.pitcher.log_message)
 
-        # this should call registered rpc on jessica side
-        self.logan_init_config.emit()
+        xb_rpc = "com.accorder.__{}_logan_run_tunnel".format(conf['shared_secret'])
+        self.pitcher.xb_session.register(self.ssh_tunnel.run_tunnel, xb_rpc)
 
-        run_logan_tunnel = "__{}_{}_{}".format(self.ss_message.text(),
-                                               "logan",
-                                               "run_tunnel")
-        self.pitcher.xb_session.register(lambda: self.ssh_tunnel.run_tunnel,
-                                         "com.accorder.{}".format(run_logan_tunnel))
+        xb_rpc = "com.accorder.__{}_logan_run_rsync".format(conf['shared_secret'])
+        self.pitcher.xb_session.register(self.rsync.run_rsync, xb_rpc)
 
-        run_logan_rsync = "__{}_{}_{}".format(self.ss_message.text(),
-                                              "logan",
-                                              "run_rsync")
-        self.pitcher.xb_session.register(lambda: self.rsync.run_rsync,
-                                         "com.accorder.{}".format(run_logan_rsync))
+        xb_rpc = "com.accorder.__{}_jessica_remote_logan_init_config".format(conf['shared_secret'])
+        yield self.pitcher.xb_session.call(xb_rpc)
 
 
 class JessicaWidget(QDialog):
@@ -379,6 +375,9 @@ class JessicaWidget(QDialog):
         self.vlayout.addStretch(1)
 
     def save_config(self, conf):
+
+        conf['shared_secret'] = self.ss_message.text()
+        # ssh_key_path_text = self.ssh_key_path.text()
         conf['rsync'] = {}
         conf['rsync']['port'] = int(random.random()*48000+1024)
         conf['rsync']['directory_path'] = self.rsync_dirpath.text()
@@ -396,6 +395,8 @@ class JessicaWidget(QDialog):
         self.rsync.rsync_log.connect(self.pitcher.log_message)
 
         self.state_machine = SshRsync(self)
+        self.state_machine.fsm.start()
+        self.state_machine.fsm.started.connect(self.jessica_init_config.emit)
 
         with (open("accorder.json", "w")) as f:
             f.write(json.dumps(self.pitcher.acconf,
@@ -403,19 +404,19 @@ class JessicaWidget(QDialog):
                                sort_keys=True))
 
         # get_session_id is important to whitelist the channel only in between logan & jessica
-        get_session_id = "__{}_{}_{}".format(self.ss_message.text(),
-                                             "jessica",
-                                             "get_session_id")
-        self.pitcher.xb_session.register(lambda: self.pitcher.xb_session._session_id,
-                                         "com.accorder.{}".format(get_session_id))
+        # get_session_id = "__{}_{}_{}".format(conf['shared_secret'],
+        #                                      "jessica",
+        #                                      "get_session_id")
+        # self.pitcher.xb_session.register(lambda: self.pitcher.xb_session._session_id,
+        #                                  "com.accorder.{}".format(get_session_id))
 
-        # jessica:rsync<>ssh<>rsync:logan needs only jessica_ssh_remote_port
-        get_conf_for_logan = "__{}_{}_{}".format(self.ss_message.text(),
-                                                 conf['film_role'],
-                                                 "get_conf_for_logan")
+        xb_rpc = "com.accorder.__{}_jessica_remote_logan_init_config".format(conf['shared_secret'])
+        self.pitcher.xb_session.register(self.remote_logan_init_config.emit, xb_rpc)
+
         logan_conf = (conf['ssh'], conf['name'])
-        self.pitcher.xb_session.register(lambda: logan_conf,
-                                         "com.accorder.{}".format(get_conf_for_logan))
+        xb_rpc = "com.accorder.__{}_jessica_get_conf_for_logan".format(conf['shared_secret'])
+        self.pitcher.xb_session.register(lambda: logan_conf, xb_rpc)
+
 
 
 class DebugInitDialog(QDialog):
