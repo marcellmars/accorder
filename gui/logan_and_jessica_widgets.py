@@ -249,6 +249,7 @@ class JessicaWidget(QDialog):
             self.lj_session = lj_session
             conf = self.pitcher.acconf['jessica'][self.lj_session]
 
+        self.shared_secret = conf['shared_secret']
         self.vlayout = QVBoxLayout()
         self.setLayout(self.vlayout)
 
@@ -320,7 +321,7 @@ class JessicaWidget(QDialog):
 
         self.ss_label = QLabel("Session secret: ")
 
-        self.ss_message = QLabel(conf['shared_secret'])
+        self.ss_message = QLabel(self.shared_secret)
         self.ss_message.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.ss_message.setObjectName("session_secret")
         self.ss_message.setSizePolicy(QSizePolicy.Expanding,
@@ -374,10 +375,16 @@ class JessicaWidget(QDialog):
         self.vlayout.addWidget(self.start_button)
         self.vlayout.addStretch(1)
 
-    def save_config(self, conf):
+    def run_remote_tunnel(self):
+        xb_rpc = "com.accorder.__{}_logan_run_tunnel".format(self.shared_secret)
+        self.pitcher.xb_session.call(xb_rpc)
 
-        conf['shared_secret'] = self.ss_message.text()
-        # ssh_key_path_text = self.ssh_key_path.text()
+    def run_remote_rsync(self):
+        xb_rpc = "com.accorder.__{}_logan_run_rsync".format(self.shared_secret)
+        self.pitcher.xb_session.call(xb_rpc)
+
+    def save_config(self, conf):
+        # conf['shared_secret'] = self.shared_secret
         conf['rsync'] = {}
         conf['rsync']['port'] = str(int(random.random()*48000+1024))
         conf['rsync']['directory_path'] = self.rsync_dirpath.text()
@@ -410,13 +417,12 @@ class JessicaWidget(QDialog):
         # self.pitcher.xb_session.register(lambda: self.pitcher.xb_session._session_id,
         #                                  "com.accorder.{}".format(get_session_id))
 
-        xb_rpc = "com.accorder.__{}_jessica_remote_logan_init_config".format(conf['shared_secret'])
+        xb_rpc = "com.accorder.__{}_jessica_remote_logan_init_config".format(self.shared_secret)
         self.pitcher.xb_session.register(self.remote_logan_init_config.emit, xb_rpc)
 
         logan_conf = (conf['ssh'], conf['name'])
-        xb_rpc = "com.accorder.__{}_jessica_get_conf_for_logan".format(conf['shared_secret'])
+        xb_rpc = "com.accorder.__{}_jessica_get_conf_for_logan".format(self.shared_secret)
         self.pitcher.xb_session.register(lambda: logan_conf, xb_rpc)
-
 
 
 class DebugInitDialog(QDialog):

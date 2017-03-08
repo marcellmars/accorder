@@ -1,4 +1,5 @@
 import os
+import tempfile
 
 from PyQt5.Qt import pyqtSignal
 from PyQt5.Qt import QObject
@@ -48,7 +49,7 @@ class SSHTunnel(QObject, ProcessProtocol):
         # jessica: ssh -N ssh.pede.rs -l tunnel -R 10000:localhost:10101 -p 443
         # jessica: run rsync on port 10101
         # logan: ssh -N ssh.pede.rs -L 10200:ssh.pede.rs:10000 -l tunnel -p 443
-        # logan: rsync -zvrith rsync://foo@localhost:10200/foo bar/
+        # logan: rsync -zvrith rsync://logan@localhost:10200/logan bar/
 
         log.info("RUN TUNNEL!")
         ssh_server = self.conf['ssh']['server']
@@ -71,11 +72,11 @@ class SSHTunnel(QObject, ProcessProtocol):
             ssh_options.extend(['-R', '{!s}:localhost:{!s}'.format(jessica_motw_port,
                                                                    rsync_port)])
         else:
-            ssh_options.extend(['-L', '{!s}:{}:{!s}'.format(jessica_motw_port,
+            ssh_options.extend(['-L', '{!s}:{}:{!s}'.format(rsync_port,
                                                             ssh_server,
-                                                            rsync_port)])
+                                                            jessica_motw_port)])
 
-        log.info("jessica_motw_port: {}".format(jessica_motw_port))
+        log.info("JESSICA MOTW PORT: {}".format(jessica_motw_port))
         self.reactor.spawnProcess(self, 'ssh', ssh_options, env=os.environ)
 
     def kill_tunnel(self):
@@ -124,16 +125,42 @@ class Rsync(QObject, ProcessProtocol):
         log.info(u"Rsync ended: {}".format(reason))
 
     def run_rsync(self):
-        # self.local_cherrypy()
-        rsync_options = ['accorder_rsync',
-                         '--daemon',
-                         '--no-detach',
-                         '--verbose',
-                         '--port',
-                         self.conf['rsync']['port'],
-                         '--config',
-                         self.conf['rsync']['directory_path']]
-        self.reactor.spawnProcess(self, 'rsync', rsync_options)
+        if self.film_role == "logan":
+            rsync_options = ['accorder_rsync_logan',
+                             '-z', '-v', '-r', '-i', '-t', '-h',
+                             'rsync://l@localhost:{}/l/'.format(self.conf['rsync']['port']),
+                             self.conf['rsync']['directory_path']]
+            self.reactor.spawnProcess(self, 'rsync', rsync_options, env={"RSYNC_PASSWORD":"{}".format(self.conf['shared_secret'])})
+        else:
+            tmp_rsync = tempfile.mkdtemp("_accorder_rsync")
+            log.info("TMP_RSYNC: {}".format(tmp_rsync))
+            with open(os.path.join(tmp_rsync, "rsyncd.conf"), "w") as f:
+                rsyncd_file = "fake super = true\n"
+                rsyncd_file += "use chroot = false\n"
+                rsyncd_file += "strict modes = false\n"
+                rsyncd_file += "refuse options = delete\n"
+                rsyncd_file += "pid file = {}/rsyncd.pid\n".format(tmp_rsync)
+                rsyncd_file += "[l]\n"
+                rsyncd_file += "  comment = Jessica for Logan with love\n"
+                rsyncd_file += "  path = {}\n".format(self.conf['rsync']['directory_path'])
+                rsyncd_file += "  read only = yes\n"
+                rsyncd_file += "  auth users = l:ro\n"
+                rsyncd_file += "  secrets file = {}/rsyncd.secrets\n".format(tmp_rsync)
+                f.write(rsyncd_file)
+
+            with open(os.path.join(tmp_rsync, "rsyncd.secrets"), "w") as f:
+                f.write("l:{}".format(self.conf['shared_secret']))
+
+            rsync_options = ['accorder_rsync_jessica',
+                             '--daemon',
+                             '--no-detach',
+                             '--verbose',
+                             '--port',
+                             self.conf['rsync']['port'],
+                             '--config',
+                             "{}/rsyncd.conf".format(tmp_rsync)]
+
+            self.reactor.spawnProcess(self, 'rsync', rsync_options)
 
     def kill_rsync(self):
         try:

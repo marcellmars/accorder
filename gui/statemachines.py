@@ -4,9 +4,6 @@ from PyQt5.Qt import QStateMachine
 
 from twisted.logger import Logger
 
-from externalprocesses import SSHTunnel
-from externalprocesses import Rsync
-
 
 log = Logger()
 
@@ -95,8 +92,10 @@ class SshRsync(QObject):
         ssh_running_jessica = QState(jessica_session)
         rsync_init_jessica = QState(jessica_session)
         rsync_running_jessica = QState(jessica_session)
-        remote_logan_tunnel_established = QState(jessica_session)
-        remote_logan_rsync_established = QState(jessica_session)
+        remote_ssh_init_logan = QState(jessica_session)
+        remote_ssh_running_logan = QState(jessica_session)
+        remote_rsync_init_logan = QState(jessica_session)
+        remote_rsync_running_logan = QState(jessica_session)
 
         logan_session = QState(logan_jessica)
         init_logan = QState(logan_session)
@@ -132,38 +131,45 @@ class SshRsync(QObject):
             lambda: self.update_current_state(("logan_jessica", "rsync_running_jessica"))
         )
 
-        remote_logan_tunnel_established.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "remote_logan_tunnel_established"))
+        remote_ssh_init_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "remote_ssh_init_logan"))
         )
 
-        remote_logan_rsync_established.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "remote_logan_rsync_established"))
+        remote_ssh_running_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "remote_ssh_running_logan"))
         )
 
+        remote_rsync_init_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "remote_rsync_init_logan"))
+        )
+
+        remote_rsync_running_logan.entered.connect(
+            lambda: self.update_current_state(("logan_jessica", "remote_rsync_running_logan"))
+        )
 
         # logan session
-        init_logan.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "init_logan"))
-        )
+        # init_logan.entered.connect(
+        #     lambda: self.update_current_state(("logan_jessica", "init_logan"))
+        # )
 
-        ssh_init_logan.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "ssh_init_logan"))
-        )
-        # ssh_init_logan.entered.connect(self.pitcher.ssh_tunnel.run_tunnel)
+        # ssh_init_logan.entered.connect(
+        #     lambda: self.update_current_state(("logan_jessica", "ssh_init_logan"))
+        # )
+        # # ssh_init_logan.entered.connect(self.pitcher.ssh_tunnel.run_tunnel)
 
-        ssh_running_logan.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "ssh_running_logan"))
-        )
-        # ssh_running_logan.entered.connect(self.pitcher.get_jessica_motw_port)
+        # ssh_running_logan.entered.connect(
+        #     lambda: self.update_current_state(("logan_jessica", "ssh_running_logan"))
+        # )
+        # # ssh_running_logan.entered.connect(self.pitcher.get_jessica_motw_port)
 
-        rsync_init_logan.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "rsync_init_logan"))
-        )
-        # rsync_init_logan.entered.connect(self.pitcher.rsync.run_rsync)
+        # rsync_init_logan.entered.connect(
+        #     lambda: self.update_current_state(("logan_jessica", "rsync_init_logan"))
+        # )
+        # # rsync_init_logan.entered.connect(self.pitcher.rsync.run_rsync)
 
-        rsync_running_logan.entered.connect(
-            lambda: self.update_current_state(("logan_jessica", "rsync_running_logan"))
-        )
+        # rsync_running_logan.entered.connect(
+        #     lambda: self.update_current_state(("logan_jessica", "rsync_running_logan"))
+        # )
 
         jessica_session.setInitialState(init_jessica)
         logan_session.setInitialState(init_logan)
@@ -176,10 +182,15 @@ class SshRsync(QObject):
         ssh_running_jessica.addTransition(rsync_init_jessica)
         rsync_init_jessica.addTransition(self.pitcher.rsync.jessica_established,
                                          rsync_running_jessica)
+        rsync_running_jessica.addTransition(remote_ssh_init_logan)
 
-        # rsync_running_jessica.addTransition(init_logan)
+        remote_ssh_init_logan.addTransition(self.pitcher.remote_logan_tunnel_established,
+                                            remote_ssh_running_logan)
+        remote_ssh_running_logan.addTransition(remote_rsync_init_logan)
+        remote_rsync_init_logan.addTransition(self.pitcher.remote_logan_rsync_established,
+                                              remote_rsync_running_logan)
 
-        # init_logan.addTransition(self.pitcher.remote_jessica_init_session, ssh_init_logan)
+        # init_logan.addTransition(self.pitcher.remote_logan_tunnel_established, ssh_init_logan)
         # ssh_init_logan.addTransition(self.pitcher.remote_logan_tunnel_established,
         #                              ssh_running_logan)
         # ssh_running_logan.addTransition(rsync_init_logan)
