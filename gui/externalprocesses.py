@@ -1,4 +1,5 @@
 import os
+import re
 import tempfile
 
 from PyQt5.Qt import pyqtSignal
@@ -26,15 +27,17 @@ class SSHTunnel(QObject, ProcessProtocol):
         self.session = session
 
     def childDataReceived(self, cfd, data):
-        log.info(u"{}: {}".format(cfd, data.decode()))
-        self.ssh_log.emit(u"{}".format(data.decode()[:30]))
+        log.info("{}".format(data.decode()))
+        if re.match(".*Entering interactive session.*", data.decode(), re.DOTALL):
+            self.logan_established.emit()
+
 
     def connectionMade(self):
         log.info(u"Tunnel established...")
         if self.film_role == "jessica":
             self.jessica_established.emit()
-        else:
-            self.logan_established.emit()
+        # else:
+            # self.logan_established.emit()
         self.ssh_log.emit(u"{}'s tunnel established...".format(self.film_role))
 
     def processEnded(self, reason):
@@ -72,7 +75,7 @@ class SSHTunnel(QObject, ProcessProtocol):
             ssh_options.extend(['-R', '{!s}:localhost:{!s}'.format(jessica_motw_port,
                                                                    rsync_port)])
         else:
-            ssh_options.extend(['-L', '{!s}:{}:{!s}'.format(rsync_port,
+            ssh_options.extend(['-v', '-L', '{!s}:{}:{!s}'.format(rsync_port,
                                                             ssh_server,
                                                             jessica_motw_port)])
 
