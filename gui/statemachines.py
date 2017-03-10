@@ -91,21 +91,16 @@ class SshRsync(QObject):
         remote_logan_init_config = QState(jessica_session)
         ssh_init_jessica = QState(jessica_session)
         ssh_running_jessica = QState(jessica_session)
-        ssh_ended_jessica = QState(jessica_session)
         rsync_init_jessica = QState(jessica_session)
         rsync_running_jessica = QState(jessica_session)
-        rsync_ended_jessica = QState(jessica_session)
         remote_ssh_init_logan = QState(jessica_session)
         remote_ssh_running_logan = QState(jessica_session)
-        remote_ssh_ended_logan = QState(jessica_session)
         remote_rsync_init_logan = QState(jessica_session)
         remote_rsync_running_logan = QState(jessica_session)
-        remote_rsync_ended_logan = QState(jessica_session)
-        reset = QState(jessica_session)
         the_end = QFinalState(jessica_session)
 
         logan_session = QState(logan_jessica)
-        init_logan = QState(logan_session)
+        waiting_for_trouble = QState(logan_session)
 
         # jessica session
         init_jessica.entered.connect(
@@ -158,7 +153,7 @@ class SshRsync(QObject):
         )
 
         jessica_session.setInitialState(init_jessica)
-        logan_session.setInitialState(init_logan)
+        logan_session.setInitialState(waiting_for_trouble)
 
         init_jessica.addTransition(self.pitcher.jessica_init_config, remote_logan_init_config)
         remote_logan_init_config.addTransition(self.pitcher.remote_logan_init_config,
@@ -179,10 +174,9 @@ class SshRsync(QObject):
         remote_rsync_init_logan.addTransition(self.pitcher.remote_logan_rsync_established,
                                               remote_rsync_running_logan)
 
-        reset.addTransition(self.pitcher.remote_logan_tunnel_ended, the_end)
-        reset.addTransition(self.pitcher.remote_logan_rsync_ended, the_end)
-        reset.addTransition(self.pitcher.ssh_tunnel.jessica_ended, the_end)
-        reset.addTransition(self.pitcher.rsync.jessica_ended, the_end)
-
+        waiting_for_trouble.addTransition(self.pitcher.remote_logan_tunnel_ended, the_end)
+        waiting_for_trouble.addTransition(self.pitcher.remote_logan_rsync_ended, the_end)
+        waiting_for_trouble.addTransition(self.pitcher.ssh_tunnel.jessica_ended, the_end)
+        waiting_for_trouble.addTransition(self.pitcher.rsync.jessica_ended, the_end)
 
         self.fsm.setInitialState(logan_jessica)

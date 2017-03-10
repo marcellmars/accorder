@@ -18,9 +18,12 @@ from PyQt5.Qt import pyqtSignal
 from twisted.internet.defer import inlineCallbacks
 from twisted.logger import Logger
 
+from autobahn.wamp.exception import ApplicationError
+
 from externalprocesses import Rsync
 from externalprocesses import SSHTunnel
 from statemachines import SshRsync
+
 import shuffled_words
 
 
@@ -37,6 +40,7 @@ class LoganWidget(QDialog):
 
         self.pitcher = pitcher
         self.reactor = reactor
+        self.xb_registered = []
 
         if not lj_session:
             # new logan session
@@ -184,12 +188,22 @@ class LoganWidget(QDialog):
             self.ssh_tunnel.kill_tunnel()
         if self.rsync.transport:
             self.rsync.kill_rsync()
+        while self.xb_registered:
+            self.xb_registered.pop().unregister()
         log.info("RESET LOGAN!")
 
     @inlineCallbacks
     def emit_remote(self, xb_rpc):
         log.info("XB_RPC: {}".format(xb_rpc))
-        yield self.pitcher.xb_session.call(xb_rpc)
+        try:
+            yield self.pitcher.xb_session.call(xb_rpc)
+        except ApplicationError as ae:
+            log.info("ApplicationError: {}".format(ae))
+
+    @inlineCallbacks
+    def xb_register(self, method, xb_uri):
+        reg = yield self.pitcher.xb_session.register(method, xb_uri)
+        self.xb_registered.append(reg)
 
     @inlineCallbacks
     def save_config(self, conf):
@@ -213,7 +227,6 @@ class LoganWidget(QDialog):
                                indent=4,
                                sort_keys=True))
 
-
         self.ssh_tunnel = SSHTunnel(conf, self.reactor, self.pitcher.xb_session)
         self.ssh_tunnel.ssh_log.connect(self.pitcher.log_message)
         xb_rpc1 = "com.accorder.__{}_jessica_remote_logan_tunnel_established".format(conf['shared_secret'])
@@ -228,19 +241,19 @@ class LoganWidget(QDialog):
         xb_rpc4 = "com.accorder.__{}_jessica_remote_logan_rsync_ended".format(conf['shared_secret'])
         self.rsync.logan_ended.connect(lambda: self.emit_remote(xb_rpc4))
 
-        # what jessica should call back here
-        xb_rpc = "com.accorder.__{}_logan_run_tunnel".format(conf['shared_secret'])
-        self.pitcher.xb_session.register(self.ssh_tunnel.run_tunnel, xb_rpc)
-        xb_rpc = "com.accorder.__{}_logan_kill_tunnel".format(conf['shared_secret'])
-        self.pitcher.xb_session.register(self.ssh_tunnel.kill_tunnel, xb_rpc)
+        reg_list = [(self.ssh_tunnel.run_tunnel,
+                     "com.accorder.__{}_logan_run_tunnel".format(conf['shared_secret'])),
+                    (self.ssh_tunnel.kill_tunnel,
+                     "com.accorder.__{}_logan_kill_tunnel".format(conf['shared_secret'])),
+                    (self.rsync.run_rsync,
+                     "com.accorder.__{}_logan_run_rsync".format(conf['shared_secret'])),
+                    (self.rsync.kill_rsync,
+                     "com.accorder.__{}_logan_kill_rsync".format(conf['shared_secret'])),
+                    (self.reset,
+                     "com.accorder.__{}_logan_reset".format(conf['shared_secret']))]
 
-        xb_rpc = "com.accorder.__{}_logan_run_rsync".format(conf['shared_secret'])
-        self.pitcher.xb_session.register(self.rsync.run_rsync, xb_rpc)
-        xb_rpc = "com.accorder.__{}_logan_kill_rsync".format(conf['shared_secret'])
-        self.pitcher.xb_session.register(self.rsync.kill_rsync, xb_rpc)
-
-        xb_rpc = "com.accorder.__{}_logan_reset".format(conf['shared_secret'])
-        self.pitcher.xb_session.register(self.reset, xb_rpc)
+        for r in reg_list:
+            self.xb_register(r[0], r[1])
 
         # call back to jessica
         xb_rpc = "com.accorder.__{}_jessica_remote_logan_init_config".format(conf['shared_secret'])
@@ -260,6 +273,7 @@ class JessicaWidget(QDialog):
 
         self.pitcher = pitcher
         self.reactor = reactor
+        self.xb_registered = []
 
         if not lj_session:
             # new jessica session
@@ -424,12 +438,18 @@ class JessicaWidget(QDialog):
 
     def reset_all(self):
         self.remote_reset()
-
         if self.ssh_tunnel.transport:
             self.ssh_tunnel.kill_tunnel()
         if self.rsync.transport:
             self.rsync.kill_rsync()
+        while self.xb_registered:
+            self.xb_registered.pop().unregister()
         log.info("RESET JESSICA!")
+
+    @inlineCallbacks
+    def xb_register(self, method, xb_uri):
+        reg = yield self.pitcher.xb_session.register(method, xb_uri)
+        self.xb_registered.append(reg)
 
     def save_config(self, conf):
         # conf['shared_secret'] = self.shared_secret
@@ -465,21 +485,21 @@ class JessicaWidget(QDialog):
         # self.pitcher.xb_session.register(lambda: self.pitcher.xb_session._session_id,
         #                                  "com.accorder.{}".format(get_session_id))
 
-        logan_conf = (conf['ssh'], conf['name'])
-        xb_rpc = "com.accorder.__{}_jessica_get_conf_for_logan".format(self.shared_secret)
-        self.pitcher.xb_session.register(lambda: logan_conf, xb_rpc)
+        reg_list = [(lambda: (conf['ssh'], conf['name']),
+                     "com.accorder.__{}_jessica_get_conf_for_logan".format(self.shared_secret)),
+                    (self.remote_logan_init_config.emit,
+                     "com.accorder.__{}_jessica_remote_logan_init_config".format(self.shared_secret)),
+                    (self.remote_logan_tunnel_established.emit,
+                     "com.accorder.__{}_jessica_remote_logan_tunnel_established".format(self.shared_secret)),
+                    (self.remote_logan_rsync_established.emit,
+                     "com.accorder.__{}_jessica_remote_logan_rsync_established".format(self.shared_secret)),
+                    (self.remote_logan_tunnel_ended.emit,
+                     "com.accorder.__{}_jessica_remote_logan_tunnel_ended".format(self.shared_secret)),
+                    (self.remote_logan_rsync_ended.emit,
+                     "com.accorder.__{}_jessica_remote_logan_rsync_ended".format(self.shared_secret))]
 
-        # logan's signals to be called remotely
-        xb_rpc = "com.accorder.__{}_jessica_remote_logan_init_config".format(self.shared_secret)
-        self.pitcher.xb_session.register(self.remote_logan_init_config.emit, xb_rpc)
-        xb_rpc = "com.accorder.__{}_jessica_remote_logan_tunnel_established".format(self.shared_secret)
-        self.pitcher.xb_session.register(self.remote_logan_tunnel_established.emit, xb_rpc)
-        xb_rpc = "com.accorder.__{}_jessica_remote_logan_rsync_established".format(self.shared_secret)
-        self.pitcher.xb_session.register(self.remote_logan_rsync_established.emit, xb_rpc)
-        xb_rpc = "com.accorder.__{}_jessica_remote_logan_tunnel_ended".format(self.shared_secret)
-        self.pitcher.xb_session.register(self.remote_logan_tunnel_ended.emit, xb_rpc)
-        xb_rpc = "com.accorder.__{}_jessica_remote_logan_rsync_ended".format(self.shared_secret)
-        self.pitcher.xb_session.register(self.remote_logan_rsync_ended.emit, xb_rpc)
+        for r in reg_list:
+            self.xb_register(r[0], r[1])
 
 
 class DebugInitDialog(QDialog):

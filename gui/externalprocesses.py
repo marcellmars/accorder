@@ -25,20 +25,20 @@ class SSHTunnel(QObject, ProcessProtocol):
         self.film_role = conf['film_role']
         self.reactor = reactor
         self.session = session
+        self.not_established = True
 
     def childDataReceived(self, cfd, data):
-        log.info("{}".format(data.decode()))
-        if re.match(".*Entering interactive session.*", data.decode(), re.DOTALL):
-            self.logan_established.emit()
-
+        # log.info("{}".format(data.decode()))
+        if self.not_established and re.match(".*Entering interactive session.*", data.decode(), re.DOTALL):
+            self.not_established = False
+            if self.film_role == "jessica":
+                self.jessica_established.emit()
+            else:
+                self.logan_established.emit()
 
     def connectionMade(self):
         log.info(u"Tunnel established...")
-        if self.film_role == "jessica":
-            self.jessica_established.emit()
-        # else:
-            # self.logan_established.emit()
-        self.ssh_log.emit(u"{}'s tunnel established...".format(self.film_role))
+        self.ssh_log.emit(u"{}'s tunnel connectionMade...".format(self.film_role))
 
     def processEnded(self, reason):
         self.ssh_log.emit(u"Tunnel is dead!")
@@ -61,8 +61,8 @@ class SSHTunnel(QObject, ProcessProtocol):
         # lport = self.acconf['cherrypy_port']
         rsync_port = self.conf['rsync']['port']
 
-        ssh_options = ['ssh_accorder',
-                       '-T', '-N', '-g', '-C',
+        ssh_options = ['accorder_ssh_{}'.format(self.film_role),
+                       '-T', '-N', '-g', '-C', '-v',
                        '-c', 'arcfour,aes128-cbc,blowfish-cbc',
                        '-o', 'TCPKeepAlive=yes',
                        '-o', 'UserKnownHostsFile=/dev/null',
@@ -75,7 +75,7 @@ class SSHTunnel(QObject, ProcessProtocol):
             ssh_options.extend(['-R', '{!s}:localhost:{!s}'.format(jessica_motw_port,
                                                                    rsync_port)])
         else:
-            ssh_options.extend(['-v', '-L', '{!s}:{}:{!s}'.format(rsync_port,
+            ssh_options.extend(['-L', '{!s}:{}:{!s}'.format(rsync_port,
                                                             ssh_server,
                                                             jessica_motw_port)])
 
@@ -130,10 +130,11 @@ class Rsync(QObject, ProcessProtocol):
     def run_rsync(self):
         if self.film_role == "logan":
             rsync_options = ['accorder_rsync_logan',
-                             '-z', '-v', '-r', '-i', '-t', '-h',
+                             # '-z', '-v', '-r', '-i', '-t', '-h',
+                             '-z', '--progress', '-r', '-i', '-t', '-h',
                              'rsync://l@localhost:{}/l/'.format(self.conf['rsync']['port']),
                              self.conf['rsync']['directory_path']]
-            self.reactor.spawnProcess(self, 'rsync', rsync_options, env={"RSYNC_PASSWORD":"{}".format(self.conf['shared_secret'])})
+            self.reactor.spawnProcess(self, 'rsync', rsync_options, env={"RSYNC_PASSWORD": "{}".format(self.conf['shared_secret'])})
         else:
             tmp_rsync = tempfile.mkdtemp("_accorder_rsync")
             log.info("TMP_RSYNC: {}".format(tmp_rsync))
