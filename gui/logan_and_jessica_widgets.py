@@ -190,6 +190,8 @@ class LoganWidget(QDialog):
             self.rsync.kill_rsync()
         while self.xb_registered:
             self.xb_registered.pop().unregister()
+        self.ss_session_name_container.hide()
+        self.ssh_proxy_bar_container.hide()
         log.info("RESET LOGAN!")
 
     @inlineCallbacks
@@ -215,7 +217,8 @@ class LoganWidget(QDialog):
         conf['ssh'], conf['name'] = yield self.pitcher.xb_session.call(get_conf_for_logan)
         self.ss_session_name.setText(conf['name'])
         self.vlayout.insertWidget(0, self.ss_session_name_container)
-        self.vlayout.insertWidget(3, self.ssh_proxy_bar(conf['ssh']))
+        self.ssh_proxy_bar_container = self.ssh_proxy_bar(conf['ssh'])
+        self.vlayout.insertWidget(3, self.ssh_proxy_bar_container)
 
         log.info("Config from Jessica: {}, {}".format(str(conf['ssh']), conf['name']))
 
@@ -253,7 +256,7 @@ class LoganWidget(QDialog):
                      "com.accorder.__{}_logan_reset".format(conf['shared_secret']))]
 
         for r in reg_list:
-            self.xb_register(r[0], r[1])
+            yield self.xb_register(r[0], r[1])
 
         # call back to jessica
         xb_rpc = "com.accorder.__{}_jessica_remote_logan_init_config".format(conf['shared_secret'])
