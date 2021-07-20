@@ -22,7 +22,7 @@ ptyprocess==0.5.1
 pyaes==1.6.0
 pyasn1==0.2.3
 pycparser==2.17
-Pygments==2.2.0
+Pygments==2.7.4
 pyOpenSSL==16.2.0
 python-dateutil==2.6.0
 pytz==2016.10
