@@ -5,7 +5,7 @@ cffi==1.9.1
 cheroot==5.1.0
 CherryPy==10.1.1
 constantly==15.1.0
-cryptography==1.7.2
+cryptography==3.3.2
 decorator==4.0.11
 idna==2.3
 incremental==16.10.1
