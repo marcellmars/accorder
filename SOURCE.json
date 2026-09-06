@@ -1,0 +1,44 @@
+{
+  "source_commit": "4022d90076d5c49a27b1d9ea9e647771a986211d",
+  "source_repository": "https://codeberg.org/marcellmars/accorder",
+  "purpose": "Native APFS mechanism experiment only; not full implementation validation",
+  "files": [
+    {
+      "path": "pkg/libraryflow/change_time_unix.go",
+      "sha256": "558d35504c3618b4f57dbf5ce24b84f912da6549c74d030e9195e8c8983100da"
+    },
+    {
+      "path": "pkg/libraryflow/change_time_windows.go",
+      "sha256": "673cb362b4be00b8d06f8a0b35015fadbf21c9fac578ea9de958b5ff34a2f351"
+    },
+    {
+      "path": "pkg/libraryflow/change_time_windows_test.go",
+      "sha256": "9c36ecdcc9dfdfc8682e48827bdbc2c11651ef968acc6b55e34b4c3c1453a92d"
+    },
+    {
+      "path": "pkg/libraryflow/fast_build_identity_spike_darwin_test.go",
+      "sha256": "c95057ab22b4ca1e7e381b5a06bb8901f9875ef458e4b2e95fcdc760517d0324"
+    },
+    {
+      "path": "pkg/libraryflow/fast_build_identity_spike_linux_test.go",
+      "sha256": "b6500ecdb203c1cb4862dbe2fdff6da5ebf3da0d60ae97f7859d108da02c515a"
+    },
+    {
+      "path": "pkg/libraryflow/fast_build_identity_spike_test.go",
+      "sha256": "0d77b8020969f05c1d002c514c36e69c5adfcb8a08cb6982c789578b9b40e882"
+    },
+    {
+      "path": "pkg/libraryflow/fast_build_identity_spike_windows_test.go",
+      "sha256": "f8b095fc6732dc5107d529c9ff140547ebbf2e91e908aaba22c1b1f0c43f5425"
+    },
+    {
+      "path": "pkg/libraryflow/libraryflow.go",
+      "sha256": "59c3d964c8c831293fdd39baffda99a835c32f1c92ec4a30068306a482d14853"
+    },
+    {
+      "path": "pkg/libraryflow/libraryflow_test.go",
+      "sha256": "077b5a5eb366c6dc4a5f44205835e01540b0c6a9ead4757d97280143c5844888"
+    }
+  ],
+  "module": "Reduced harness module; same Go language version and x/sys dependency as source"
+}

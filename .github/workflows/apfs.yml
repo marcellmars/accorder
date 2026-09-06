@@ -1,0 +1,64 @@
+name: Native APFS mechanism validation
+
+on:
+  push:
+    branches: [validation/fastbuild-apfs-20260906]
+
+permissions:
+  contents: read
+
+jobs:
+  apfs:
+    name: APFS (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.25.0'
+          cache: false
+      - name: Capture environment and verify source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          {
+            sw_vers
+            uname -a
+            go version
+            echo "runner_image=$ImageOS version=$ImageVersion"
+            echo "github_commit=$GITHUB_SHA"
+            echo "temporary_directory=$TMPDIR"
+            df -h "$TMPDIR"
+            cat SOURCE.json
+            shasum -a 256 -c SOURCE.sha256
+          } 2>&1 | tee evidence/environment.txt
+      - name: Run native tests and reject empty or skipped results
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          go test -mod=readonly -tags fastbuild_apfs_validation ./pkg/libraryflow -run '^TestFastBuildDarwinAPFSMechanisms$' -count=1 -json 2>evidence/stderr.txt | tee evidence/tests.jsonl
+          result=${PIPESTATUS[0]}
+          set -e
+          echo "$result" > evidence/exit-code.txt
+          if [ "$result" -ne 0 ]; then
+            cat evidence/stderr.txt
+            exit "$result"
+          fi
+          python3 verify-results.py evidence/tests.jsonl | tee evidence/verification.txt
+      - name: Save native evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: apfs-${{ matrix.runner }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
