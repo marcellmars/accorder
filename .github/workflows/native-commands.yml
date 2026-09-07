@@ -60,6 +60,20 @@ jobs:
           cd ..
           python3 verify.py verify evidence/tests.jsonl expected-tests.json | tee evidence/verification.txt
           exit "$result"
+      - name: Recheck native APFS mechanisms on the same source
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          cd source
+          set +e
+          go test -mod=readonly -tags fastbuild_apfs_validation ./pkg/libraryflow -run '^TestFastBuildDarwinAPFSMechanisms$' -count=1 -timeout=2m -json > ../evidence/mechanisms.jsonl 2> ../evidence/mechanisms-stderr.txt
+          result=$?
+          set -e
+          cd ..
+          python3 verify.py verify evidence/mechanisms.jsonl expected-mechanisms.json | tee evidence/mechanisms-verification.txt
+          exit "$result"
       - name: Retain evidence even on failure
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
