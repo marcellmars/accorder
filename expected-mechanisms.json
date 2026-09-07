@@ -1,0 +1,22 @@
+[
+  "TestFastBuildDarwinAPFSMechanisms",
+  "TestFastBuildDarwinAPFSMechanisms/change-time-precision",
+  "TestFastBuildDarwinAPFSMechanisms/closed-file-operations",
+  "TestFastBuildDarwinAPFSMechanisms/closed-file-operations/atomic-replacement",
+  "TestFastBuildDarwinAPFSMechanisms/closed-file-operations/copied-root",
+  "TestFastBuildDarwinAPFSMechanisms/closed-file-operations/rewrite-restored-mtime",
+  "TestFastBuildDarwinAPFSMechanisms/closed-file-operations/timestamp-only",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/file-id",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/filesystem",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/machine",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/missing-capability",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/missing-change-time",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/missing-file-id",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/missing-machine",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/missing-root-id",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/root-id",
+  "TestFastBuildDarwinAPFSMechanisms/provenance-policy/root-path",
+  "TestFastBuildDarwinAPFSMechanisms/unavailable-change-time",
+  "TestLocalObservationMatchesIndependentProbes"
+]
