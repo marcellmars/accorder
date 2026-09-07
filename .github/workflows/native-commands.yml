@@ -1,0 +1,84 @@
+name: Native fast-build command acceptance
+on:
+  push:
+    branches: [validation/fastbuild-observations-20260907]
+permissions:
+  contents: read
+jobs:
+  commands:
+    name: Commands (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.25.0'
+          cache: false
+      - name: Verify isolated source snapshot and native filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir evidence source
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          meta=json.loads(pathlib.Path('SOURCE.json').read_text())
+          assert hashlib.sha256(pathlib.Path('source.tar.gz').read_bytes()).hexdigest()==meta['archive_sha256']
+          print('Verified source archive:',meta['git_commit'])
+          PY
+          tar -xzf source.tar.gz -C source
+          native_device=$(df -P "$TMPDIR" | awk 'NR==2 {print $1}')
+          {
+            sw_vers
+            uname -a
+            go version
+            echo "runner_image=$ImageOS version=$ImageVersion"
+            echo "snapshot_commit=$GITHUB_SHA"
+            diskutil info "$native_device"
+            python3 -c 'import json; m=json.load(open("SOURCE.json")); print("source_commit="+m["git_commit"]); print("source_sha256="+m["archive_sha256"])'
+          } 2>&1 | tee evidence/environment.txt
+          diskutil info "$native_device" | grep -qi 'APFS'
+      - name: Run real commands on disposable local remotes
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          pattern=$(cat test-pattern.txt)
+          cd source
+          set +e
+          go test -mod=readonly ./cmd -run "$pattern" -count=1 -timeout=12m -json > ../evidence/tests.jsonl 2> ../evidence/stderr.txt
+          result=$?
+          set -e
+          echo "$result" > ../evidence/exit-code.txt
+          cd ..
+          python3 verify.py verify evidence/tests.jsonl expected-tests.json | tee evidence/verification.txt
+          exit "$result"
+      - name: Recheck native APFS mechanisms on the same source
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          cd source
+          set +e
+          go test -mod=readonly -tags fastbuild_apfs_validation ./pkg/libraryflow -run '^(TestFastBuildDarwinAPFSMechanisms|TestLocalObservationMatchesIndependentProbes)$' -count=1 -timeout=2m -json > ../evidence/mechanisms.jsonl 2> ../evidence/mechanisms-stderr.txt
+          result=$?
+          set -e
+          cd ..
+          python3 verify.py verify evidence/mechanisms.jsonl expected-mechanisms.json | tee evidence/mechanisms-verification.txt
+          exit "$result"
+      - name: Retain evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: native-commands-${{ matrix.runner }}
+          path: evidence/
+          if-no-files-found: error
+          retention-days: 30
